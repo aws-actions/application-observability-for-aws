@@ -73,7 +73,7 @@ async function run() {
         isEditEvent = payload.action === 'edited';
         triggerUsername = issue.user?.login || 'unknown';
       }
-    } else if (testMode == 'true') {
+    } else if (testMode === 'true') {
       // In test mode, always trigger and use custom prompt
       containsTrigger = true;
       triggerText = customPrompt;
@@ -229,7 +229,7 @@ async function run() {
     // Remove bot name from the user's request
     const cleanedUserRequest = triggerText.replace(new RegExp(botName, 'gi'), '').trim();
 
-    if (testMode == 'true') {
+    if (testMode === 'true') {
       // for integration test, use custom prompt directly
       try {
         fs.writeFileSync(promptFile, customPrompt);
@@ -282,7 +282,8 @@ async function run() {
  * Check if user has write or admin permissions to the repository
  */
 async function checkUserPermissions(octokit, context, issueNumber, allowedNonWriteUsers) {
-  if (testMode == 'true') {
+  const testMode = process.env.TEST_MODE || 'false';
+  if (testMode === 'true') {
     return true;
   }
 
