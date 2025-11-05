@@ -58,12 +58,10 @@ jobs:
         run: |
           echo "Checking for AWS Application Signals MCP usage..."
           
-          RAW_OUTPUT_FILE="./test-outputs/awsapm-output/awsapm-raw-output.txt"
+          RAW_OUTPUT_FILE="./test-outputs/awsapm-raw-output.txt"
           
           if [[ ! -f "$RAW_OUTPUT_FILE" ]]; then
-            echo "ERROR: Raw output file not found at $RAW_OUTPUT_FILE"
-            echo "Available files in test-outputs:"
-            find ./test-outputs -type f -ls
+            echo "ERROR: Raw output file not found"
             exit 1
           fi
           
