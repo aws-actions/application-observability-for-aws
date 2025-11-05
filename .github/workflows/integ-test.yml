@@ -5,7 +5,7 @@ on:
     - cron: '0 */6 * * *'
   push:
     branches:
-      - zhaez/integ-test
+      - integ-test
 
 jobs:
   awsapm-investigation:
@@ -58,7 +58,7 @@ jobs:
         run: |
           echo "Checking for AWS Application Signals MCP usage..."
           
-          RAW_OUTPUT_FILE="./awsapm-output/raw-output.txt"
+          RAW_OUTPUT_FILE="./awsapm-output/awsapm-raw-output.txt"
           
           if [[ ! -f "$RAW_OUTPUT_FILE" ]]; then
             echo "ERROR: Raw output file not found"
