@@ -1,0 +1,74 @@
+name: Integration Test
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  push:
+    branches:
+      - zhaez/integ-test
+
+jobs:
+  awsapm-investigation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Application observability for AWS Investigation
+        id: awsapm
+        uses: ./
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          bot_name: "@awsapm"
+          tracing_mode: "true"
+          test_mode: "true"  # Enable integration test mode
+          custom_prompt: "Use the list_monitored_services tool to show me all services currently monitored by AWS Application Signals. I need to see the complete list of monitored services."
+
+      - name: Upload test outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-outputs
+          path: |
+            ${{ runner.temp }}/awsapm-output/
+          retention-days: 7
+
+  verify-mcp-usage:
+    needs: awsapm-investigation
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download test outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-test-outputs
+          path: ./
+
+      - name: Verify MCP tool usage
+        shell: bash
+        run: |
+          echo "Checking for AWS Application Signals MCP usage..."
+          
+          RAW_OUTPUT_FILE="./awsapm-output/raw-output.txt"
+          
+          if [[ ! -f "$RAW_OUTPUT_FILE" ]]; then
+            echo "ERROR: Raw output file not found"
+            exit 1
+          fi
+          
+          # Check for tool usage from AWS Application Signals MCP server
+          if grep -q "Using tool:" "$RAW_OUTPUT_FILE" && grep -q "awslabs.cloudwatch-appsignals-mcp" "$RAW_OUTPUT_FILE"; then
+            echo "PASSED - AWS Application Signals MCP tool was called"
+          else
+            echo "FAILED: No AWS Application Signals MCP tool calls found"
+            exit 1
+          fi
