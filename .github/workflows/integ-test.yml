@@ -61,7 +61,9 @@ jobs:
           RAW_OUTPUT_FILE="./test-outputs/awsapm-output/awsapm-raw-output.txt"
           
           if [[ ! -f "$RAW_OUTPUT_FILE" ]]; then
-            echo "ERROR: Raw output file not found"
+            echo "ERROR: Raw output file not found at $RAW_OUTPUT_FILE"
+            echo "Available files in test-outputs:"
+            find ./test-outputs -type f -ls
             exit 1
           fi
           

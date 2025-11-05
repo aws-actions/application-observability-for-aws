@@ -65,10 +65,8 @@ Please check the workflow logs for more details and ensure proper authentication
     fs.writeFileSync(responseFile, investigationResult);
 
     // Save raw output for integration test validation
-    if (rawOutput) {
-      const rawOutputFile = path.join(outputDir, 'awsapm-raw-output.txt')
-      fs.writeFileSync(rawOutputFile, rawOutput)
-    }
+    const rawOutputFile = path.join(outputDir, 'awsapm-raw-output.txt');
+    fs.writeFileSync(rawOutputFile, rawOutput || 'No raw output captured');
 
     // Set outputs
     core.setOutput('execution_file', responseFile);
