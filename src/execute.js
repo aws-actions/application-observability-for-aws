@@ -34,10 +34,16 @@ async function run() {
 
     // Run Amazon Q Developer CLI investigation
     let investigationResult = '';
+    let rawOutput = '';
 
     try {
       core.info('Running Amazon Q Developer CLI investigation...');
       const executor = new AmazonQCLIExecutor(null);
+
+      executor.onRawOutput = (output) => {
+        rawOutput = output;
+      };
+
       investigationResult = await executor.execute(promptContent);
       core.info('Amazon Q Developer CLI investigation completed');
     } catch (error) {
@@ -57,6 +63,12 @@ Please check the workflow logs for more details and ensure proper authentication
     const runId = process.env.GITHUB_RUN_ID || Date.now();
     const responseFile = path.join(outputDir, `awsapm-response-${runId}.txt`);
     fs.writeFileSync(responseFile, investigationResult);
+
+    // Save raw output for integration test validation
+    if (rawOutput) {
+      const rawOutputFile = path.join(outputDir, 'awsapm-raw-output.txt')
+      fs.writeFileSync(rawOutputFile, rawOutput)
+    }
 
     // Set outputs
     core.setOutput('execution_file', responseFile);

@@ -217,6 +217,10 @@ class BaseCLIExecutor {
         const output = stdoutData || stderrData;
         core.debug(`[SUMMARY] Using ${stdoutData ? 'stdout' : 'stderr'} as output source`);
 
+        if (this.onRawOutput) {
+          this.onRawOutput(output);
+        }
+
         resolve({ output, exitCode: code || 0 });
       });
 
