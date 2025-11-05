@@ -45,6 +45,10 @@ inputs:
     description: "Enable tracing to show AI agent reasoning steps and MCP tool calls in workflow summary"
     required: false
     default: "true"
+  test_mode:
+    description: "Enable integration test mode (internal use only)"
+    required: false
+    default: "false"
 
 outputs:
   execution_file:
@@ -86,6 +90,7 @@ runs:
         GITHUB_RUN_ID: ${{ github.run_id }}
         DEFAULT_WORKFLOW_TOKEN: ${{ github.token }}
         TRACING_MODE: ${{ inputs.tracing_mode }}
+        TEST_MODE: ${{ inputs.test_mode }}
 
     - name: Install CLI Tools
       if: steps.init.outputs.contains_trigger == 'true'
