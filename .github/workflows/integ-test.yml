@@ -88,3 +88,26 @@ jobs:
             cat "$RAW_OUTPUT_FILE"
             exit 1
           fi
+
+  publish-metric:
+    needs: [awsapm-investigation, verify-mcp-usage]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 #5.0.0
+        with:
+          role-to-assume: ${{ secrets.MONITORING_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Publish integration test status
+        run: |
+          if [[ "${{ needs.awsapm-investigation.result }}" == "success" && "${{ needs.verify-mcp-usage.result }}" == "success" ]]; then
+            value="1.0"
+          else
+            value="0.0"
+          fi
+          
+          aws cloudwatch put-metric-data \
+            --namespace 'ADOT/GithubActions' \
+            --metric-data MetricName=Success,Value=$value,Dimensions="[{Name=repository,Value=${{ github.repository }}},{Name=branch,Value=${{ github.ref_name }}},{Name=workflow,Value=integ_test}]"
