@@ -8,6 +8,9 @@ on:
       - integ-test
       - main
 
+env:
+  AWS_DEFAULT_REGION: us-east-1
+
 jobs:
   awsapm-investigation:
     runs-on: ubuntu-latest
@@ -28,7 +31,7 @@ jobs:
         with:
           aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws_region: ${{ env.AWS_DEFAULT_REGION }}
           bot_name: "@awsapm"
           tracing_mode: "true"
           test_mode: "true"
@@ -40,7 +43,7 @@ jobs:
         with:
           aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws_region: ${{ env.AWS_DEFAULT_REGION }}
           bot_name: "@awsapm"
           tracing_mode: "true"
           test_mode: "true"
@@ -100,7 +103,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 #5.0.0
         with:
           role-to-assume: ${{ secrets.MONITORING_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
       - name: Publish integration test status
         run: |
