@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - integ-test
+      - main
 
 jobs:
   awsapm-investigation:
@@ -21,8 +22,8 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run Application observability for AWS Investigation
-        id: awsapm
+      - name: Run Application Observability for AWS Investigation - Main Build
+        if: github.event_name == 'push'
         uses: ./
         with:
           aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -30,7 +31,19 @@ jobs:
           aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
           bot_name: "@awsapm"
           tracing_mode: "true"
-          test_mode: "true"  # Enable integration test mode
+          test_mode: "true"
+          custom_prompt: "Use the list_monitored_services tool to show me all services currently monitored by AWS Application Signals. I need to see the complete list of monitored services."
+
+      - name: Run Application Observability for AWS Investigation - Soak Test
+        if: github.event_name == 'schedule'
+        uses: ./
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          bot_name: "@awsapm"
+          tracing_mode: "true"
+          test_mode: "true"
           custom_prompt: "Use the list_monitored_services tool to show me all services currently monitored by AWS Application Signals. I need to see the complete list of monitored services."
 
       - name: Upload test outputs
