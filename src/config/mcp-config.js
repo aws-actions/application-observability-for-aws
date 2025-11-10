@@ -7,12 +7,15 @@ class MCPConfigManager {
   }
 
   /**
-   * Get AWS CloudWatch AppSignals MCP server configuration
+   * Get AWS CloudWatch Application Signals MCP server configuration
    */
-  getAppSignalsServerConfig() {
+  getApplicationSignalsServerConfig() {
     return {
       command: "uvx",
       args: ["awslabs.cloudwatch-appsignals-mcp-server@latest"],
+      env: {
+        MCP_RUN_FROM: "awsapm-gh"
+      },
       transportType: "stdio"
     };
   }
@@ -42,22 +45,24 @@ class MCPConfigManager {
   }
 
   /**
-   * Get list of AWS CloudWatch AppSignals MCP tools for auto-approval
+   * Get list of AWS CloudWatch Application Signals MCP tools for auto-approval
    */
-  getAppSignalsToolsList() {
+  getApplicationSignalsToolsList() {
     return [
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__list_monitored_services",
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__get_service_detail",
+      "mcp__awslabs_cloudwatch-appsignals-mcp-server__list_service_operations",
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__list_slis",
+      "mcp__awslabs_cloudwatch-appsignals-mcp-server__list_slos",
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__get_slo",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__search_Transaction_spans",
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__search_transaction_spans",
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__query_sampled_traces",
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__query_service_metrics",
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__audit_services",
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__audit_slos",
       "mcp__awslabs_cloudwatch-appsignals-mcp-server__audit_service_operations",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__get_enablement_guide"
+      "mcp__awslabs_cloudwatch-appsignals-mcp-server__get_enablement_guide",
+      "mcp__awslabs_cloudwatch-appsignals-mcp-server__analyze_canary_failures"
     ];
   }
 
@@ -83,14 +88,14 @@ class MCPConfigManager {
   buildMCPConfig() {
     const config = { mcpServers: {} };
 
-    // Add AWS CloudWatch AppSignals MCP server if credentials available
+    // Add AWS CloudWatch Application Signals MCP server if credentials available
     if (this.hasAWSCredentials()) {
-      const appSignalsConfig = this.getAppSignalsServerConfig();
+      const applicationSignalsConfig = this.getApplicationSignalsServerConfig();
 
       // Amazon Q CLI format
       config.mcpServers["awslabs.cloudwatch-appsignals-mcp"] = {
-        ...appSignalsConfig,
-        autoApprove: this.getAppSignalsToolsList(),
+        ...applicationSignalsConfig,
+        autoApprove: this.getApplicationSignalsToolsList(),
         disabled: false
       };
     }
@@ -126,6 +131,7 @@ class MCPConfigManager {
   /**
    * Get AWS environment variables for MCP server
    */
+  // TODO: support IAM role consumed by aws-actions/configure-aws-credentials
   getAWSEnvVars() {
     return {
       aws_access_key_id: process.env.AWS_ACCESS_KEY_ID,

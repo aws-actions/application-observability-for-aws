@@ -53,8 +53,7 @@ async function run() {
         `---\n\n` +
         `✅ **Status**: Complete\n` +
         `👤 **Requested by**: @${triggerUsername}\n` +
-        `🔗 **Workflow**: [View details](${workflowUrl})\n\n` +
-        `*Powered by AI Agent*`;
+        `🔗 **Workflow**: [View details](${workflowUrl})`;
     } else {
       commentBody = `❌ **Application observability for AWS Investigation Failed**\n\n` +
         `The investigation could not be completed. Please check the workflow logs for more details.\n\n` +

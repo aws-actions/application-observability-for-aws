@@ -200,7 +200,7 @@ async function fetchPRDiffContext(context, githubToken) {
 /**
  * Create a general prompt based on GitHub context and repository information
  */
-async function createAWSAPMPrompt(context, repoInfo, userRequest = '', githubToken = null) {
+async function createAWSAPMPrompt(context, repoInfo, userRequest = '', githubToken = null, branchName = null) {
   const { eventName, payload } = context;
 
   // Detect PR context correctly for different event types
@@ -272,6 +272,9 @@ ${file.patch}
 
   // Get custom prompt from environment if provided
   const customPrompt = process.env.CUSTOM_PROMPT || '';
+
+  // Use provided branch name or fallback to default
+  const actualBranchName = branchName || 'awsapm-branch';
 
   // Build comprehensive prompt with repository context and PR changes
   let prompt = `You are an AI assistant designed to help with GitHub issues and pull requests. Think carefully as you analyze the context and respond appropriately.${customPrompt ? `\n\nADDITIONAL INSTRUCTIONS:\n${customPrompt}` : ''}\n\nHere's the context for your current task:
@@ -383,9 +386,9 @@ Follow these steps:
    - Explicitly asking NOT to implement (e.g., "just explain", "don't change anything", "analysis only")
 
    If implementing code changes:
-   Step 1: Create branch (mcp__github__create_branch)
-   Step 2: Update files (mcp__github__create_or_update_file)
-   Step 3: Create PR (mcp__github__create_pull_request)
+   Step 1: Create branch using the EXACT branch name: "${actualBranchName}" (mcp__github__create_branch)
+   Step 2: Update files on this branch (mcp__github__create_or_update_file)
+   Step 3: Create PR from this branch to target branch (mcp__github__create_pull_request)
 
 6. Deliver Results:
    - [CRITICAL!] Start your response with EXACTLY this line as the very first line:

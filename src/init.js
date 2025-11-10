@@ -168,9 +168,7 @@ async function run() {
             const reinvestigateBody = `🔄 **Re-investigating...**\n\n` +
               `Request updated by @${triggerUsername}.\n\n` +
               `Updated request:\n> ${triggerText.substring(0, 300)}${triggerText.length > 300 ? '...' : ''}\n\n` +
-              `⏳ Investigation in progress - [View workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})\n\n` +
-              `Branch: \`${awsapmBranch}\`\n\n` +
-              `*Powered by AI Agent*`;
+              `⏳ Investigation in progress - [View workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})`;
 
             await octokit.rest.issues.updateComment({
               owner: context.repo.owner,
@@ -184,10 +182,8 @@ async function run() {
         // Create new tracking comment if not reusing
         if (!awsapmCommentId) {
           const commentBody = `🔍 **Application observability for AWS Investigation Started**\n\n` +
-            `I'm analyzing this ${isPR ? 'PR' : 'issue'} with AI Agent...\n\n` +
-            `⏳ Investigation in progress - [View workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})\n\n` +
-            `Branch: \`${awsapmBranch}\`\n\n` +
-            `*Powered by AI Agent*`;
+            `I'm analyzing this ${isPR ? 'PR' : 'issue'}...\n\n` +
+            `⏳ Investigation in progress - [View workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})`;
 
           const comment = await octokit.rest.issues.createComment({
             owner: context.repo.owner,
@@ -241,11 +237,11 @@ async function run() {
       // Use the dynamic prompt generation with PR context
       const { createGeneralPrompt } = require('./prompt-builder');
 
-      try {
-        const finalPrompt = await createGeneralPrompt(context, repoInfo, cleanedUserRequest, githubToken);
-        fs.writeFileSync(promptFile, finalPrompt);
-      } catch (promptError) {
-        core.error(`Failed to generate dynamic prompt: ${promptError.message}`);
+    try {
+      const finalPrompt = await createGeneralPrompt(context, repoInfo, cleanedUserRequest, githubToken, awsapmBranch);
+      fs.writeFileSync(promptFile, finalPrompt);
+    } catch (promptError) {
+      core.error(`Failed to generate dynamic prompt: ${promptError.message}`);
 
         // Fallback to basic prompt if dynamic generation fails
         let fallbackPrompt = '';

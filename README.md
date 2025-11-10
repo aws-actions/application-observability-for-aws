@@ -1,15 +1,15 @@
 # Application Observability for AWS Action
 
-A GitHub Action that brings Agentic AI capabilities directly into GitHub, enabling service issue investigation with live production context, dynamic OpenTelemetry instrumentation, automated APM enablement, and AI-powered bug fixing—all integrated with AWS Application Signals.
+A GitHub Action that brings Agentic AI capabilities directly into GitHub, enabling service issue investigation with live production context, automated Application Signals enablement, and AI-powered bug fixing with live telemetry data.
 
-This action is powered by the [AWS Application Signals MCP](https://github.com/awslabs/mcp/tree/main/src/cloudwatch-appsignals-mcp-server) and works with modern AI coding agents like Amazon Q Developer CLI and other morden AI Agents. When you mention `@awsapm` in GitHub issues or pull request comments, it helps you troubleshoot production issues, implement fixes, and enhance observability coverage on demand.
+This action is powered by the [AWS Application Signals MCP](https://github.com/awslabs/mcp/tree/main/src/cloudwatch-appsignals-mcp-server) and works with Amazon Q Developer CLI. When you mention `@awsapm` in GitHub issues or pull request comments, it helps you troubleshoot production issues, implement fixes, and enhance observability coverage on demand.
 
 ## ✨ Features
 
 With a one-time setup of Application Observability for AWS Action workflow for your GitHub repository, developers can:
 
 1. **Troubleshoot Production Issues**: Investigate and fix production problems using live telemetry and SLO data from AWS Application Signals via MCP
-2. **Application Observability Enablement Assistance**: Get help enabling Application Signals with integrated ApplicationSignals MCP and domain knowledge as context
+2. **Application Observability Enablement Assistance**: Get help enabling Application Signals with integrated Application Signals MCP and domain knowledge as context
 3. **AI-Powered Analysis**: Leverage Amazon Q Developer CLI for intelligent code analysis and recommendations
 4. **Automated Workflows**: Responds to `@awsapm` mentions in issues and PR comments, working around the clock
 
@@ -40,7 +40,7 @@ These credentials will be used to set up Amazon Q Developer CLI and the APM MCP 
 Create `.github/workflows/awsapm.yml` in your repository:
 
 ```yaml
-name: Applicaiton Observability
+name: Application Observability
 
 on:
   issue_comment:
@@ -163,30 +163,4 @@ For issues and questions:
 - Check the troubleshooting documentation (coming soon)
 - Review the action logs in your workflow runs
 
-## 🗺️ Roadmap
-
-### Current Development
-
-**Phase 1** (Current): Repository skeleton and documentation
-**Phase 2**: Core utilities and configuration
-**Phase 3**: CLI executors
-**Phase 4**: Prompt builder
-**Phase 5**: Core action logic
-**Phase 6**: Action orchestration
-**Phase 7**: Examples and comprehensive documentation
-**Phase 8**: Testing and CI/CD
-**Phase 9**: Release preparation
-
-### Future Enhancements
-
-After completing the GitHub Action, we plan to introduce a **GitHub App** that:
-- Monitors all relevant GitHub events and backend health signals
-- Connects to the APM backend automatically
-- Takes proactive actions based on service health
-- Provides a comprehensive option that complements (not replaces) the GitHub Action
-
-This will give customers flexibility to choose the approach that best fits their workflow.
-
 ---
-
-**Status**: 🚧 Under active development

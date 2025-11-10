@@ -2,8 +2,7 @@ module.exports = {
   testEnvironment: 'node',
   coverageDirectory: 'coverage',
   collectCoverageFrom: [
-    'src/**/*.js',
-    '!src/utils/record-timing.sh'
+    'src/**/*.js'
   ],
   testMatch: ['**/test/**/*.test.js'],
   coverageThreshold: {

@@ -326,7 +326,7 @@ class BaseCLIExecutor {
       if (exitCode === 0) {
         core.info(`${commandName} CLI completed successfully`);
         const result = this.parseOutput(output.trim());
-        return result || 'AI Agent investigation completed, but no output was generated.';
+        return result || 'Investigation completed, but no output was generated.';
       } else {
         throw new Error(`${commandName} CLI exited with code ${exitCode}`);
       }
