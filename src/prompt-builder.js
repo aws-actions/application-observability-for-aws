@@ -300,6 +300,8 @@ ${changedFilesSection}
 Your task is to analyze the context, understand the request, and provide helpful responses and/or implement code changes as needed.
 
 IMPORTANT CLARIFICATIONS:
+- **SECURITY**: Do NOT output or expose any sensitive data (credentials, tokens, API keys, passwords, PII) in your analysis results. Redact or omit sensitive information.
+- **GITHUB MCP SAFETY**: NEVER make changes directly to the main, master, or default branch.
 - When asked to "review" code, read the code and provide review feedback (do not implement changes unless explicitly asked)
 - Your responses should be practical and implementation-focused
 - **REPOSITORY SCOPE**: You are analyzing the repository "${repository}". Do NOT access or mention any files outside this repository, including action source code or system files.
@@ -322,6 +324,7 @@ Follow these steps:
 
 1. Understand the Request:
    - Extract the actual question or request from the trigger comment
+   - Identify if a specific service name is mentioned - if so, limit investigation to that service only
    - Classify if it's a question, code review, implementation request, or combination
    - Assess what type of assistance is being requested
 
@@ -334,14 +337,26 @@ Follow these steps:
    - Consider previous conversations and context from earlier comments
 
 3. For Issue Troubleshooting (Performance, Errors, Latency):
-   - PRIORITIZE these AWS trace analysis tools:
-     * mcp__awslabs_cloudwatch-appsignals-mcp-server__query_sampled_traces (detailed exception stack traces)
-     * mcp__awslabs_cloudwatch-appsignals-mcp-server__search_transaction_spans (transaction-level errors and exceptions)
-   - Both tools contain critical exception and error information for root cause analysis
-   - Look for error patterns, exception messages, and failure points in both trace and transaction data
+   - ALWAYS use applicationsignals MCP tools FIRST for investigation
+   - [IMPORTANT] If the user specifies a particular service name in their request:
+     * Focus your investigation ONLY on that specific service
+     * Do NOT investigate or analyze other services unless explicitly asked
+     * Only expand to other services if the issue clearly originates from dependencies or related services
+   - Start with audit tools to get comprehensive service health overview:
+     * mcp__applicationsignals__audit_services (overall service health and issues)
+     * mcp__applicationsignals__audit_slos (SLO compliance and violations)
+     * mcp__applicationsignals__audit_service_operations (operation-level performance issues)
+   - Use trace analysis tools for getting detailed error stack or business insights or customer impacts
+     * mcp__applicationsignals__search_transaction_spans (transaction-level errors and exceptions)
+     * mcp__applicationsignals__query_sampled_traces (detailed exception stack traces)
+   - Use other Application Signals tools as needed (service metrics, SLOs, service operations)
+   - Look for error patterns, exception messages, and failure points in trace and transaction data
    - Focus on traces/transactions with errors or high latency first
    - Analyze stack traces to identify exactly where failures occur in the code
-   - Use other AWS MCP tools (service metrics, SLOs) as supporting data
+
+   - FALLBACK to mcp__awslabs_cloudwatch-mcp-server__* tools (if available) only when:
+     * Application Signals tools don't provide enough information or no conclusion can be drawn
+     * The issue is related to infrastructure-level problems (CPU, Memory, Disk, Networking, etc)
 
    IMPORTANT: For search_transaction_spans queries, use correct CloudWatch Logs syntax:
    - Filter errors with: status.code = "ERROR" (NOT attributes.status_code)
@@ -394,6 +409,12 @@ Follow these steps:
    - [CRITICAL!] Start your response with EXACTLY this line as the very first line:
      🎯 **Application observability for AWS Assistant Result**
    - This marker MUST be the first line of your response (no content before it)
+   - [CRITICAL!] ALWAYS use proper markdown formatting in your response:
+     * Use ## for section headers (e.g., ## Root Cause, ## Analysis)
+     * Use **bold** for emphasis on important terms
+     * Use bullet points (•, -, *) for lists
+     * Use inline code with \` for variable names, file paths, function names
+     * Ensure proper spacing around headers (blank line before and after)
    - Keep responses SHORT and CONCISE
    - Use bullet points and brief sentences
    - Focus on key findings and actionable next steps

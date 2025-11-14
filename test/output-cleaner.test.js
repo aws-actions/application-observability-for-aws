@@ -57,6 +57,20 @@ describe('OutputCleaner', () => {
       const result = cleaner.removeAnsiCodes(input);
       expect(result).toBe('Bold Red HiddenFragment');
     });
+
+    test('preserves backticks for code blocks', () => {
+      const input = 'Here is code: ```python\nprint("hello")\n```';
+      const result = cleaner.removeAnsiCodes(input);
+      expect(result).toContain('```python');
+      expect(result).toContain('```');
+      expect(result).toContain('print("hello")');
+    });
+
+    test('preserves inline code with backticks', () => {
+      const input = 'Use `variableName` in your code';
+      const result = cleaner.removeAnsiCodes(input);
+      expect(result).toBe('Use `variableName` in your code');
+    });
   });
 
   describe('removeToolExecutionBlocks', () => {
@@ -105,6 +119,45 @@ Result here`;
       expect(result).not.toContain('● Running');
     });
 
+    test('removes thinking statements but keeps the last one (strips >)', () => {
+      const input = `🎯 **Application observability for AWS Assistant Result**
+
+> Analyzing the traces...
+> Let me check the metrics...
+> SLO Status for customers-service-java:
+
+• SLO Name: "Availability"
+• Current Status: ✅ COMPLIANT
+
+## Root Cause
+
+The issue is...`;
+
+      const result = cleaner.removeToolExecutionBlocks(input);
+      expect(result).toContain('SLO Status for customers-service-java:');
+      expect(result).not.toContain('> SLO Status for customers-service-java:');
+      expect(result).toContain('• SLO Name: "Availability"');
+      expect(result).toContain('## Root Cause');
+      expect(result).not.toContain('> Analyzing the traces...');
+      expect(result).not.toContain('> Let me check the metrics...');
+    });
+
+    test('keeps only the last line starting with > and strips the >', () => {
+      const input = `🎯 **Application observability for AWS Assistant Result**
+
+> Checking the code now...
+> Looking at line 184...
+> Code Problem: Missing error handling
+
+Line 184 has an issue`;
+
+      const result = cleaner.removeToolExecutionBlocks(input);
+      expect(result).toContain('Code Problem: Missing error handling');
+      expect(result).not.toContain('> Code Problem: Missing error handling');
+      expect(result).not.toContain('> Checking the code now...');
+      expect(result).not.toContain('> Looking at line 184...');
+    });
+
     test('uses last completed marker when multiple tools executed', () => {
       const input = `● Running tool1
 ● Completed in 1s
@@ -128,17 +181,20 @@ No tool markers`;
       expect(result).toBe(input.trim());
     });
 
-    test('removes thinking statements (lines starting with >)', () => {
+    test('removes thinking statements but keeps last > line (strips >)', () => {
       const input = `🎯 **Application observability for AWS Assistant Result**
 
 > Thinking about the problem
 > Analyzing data
+> Final result summary
 ## Result
 Actual content`;
 
       const result = cleaner.removeToolExecutionBlocks(input);
       expect(result).toContain('## Result');
       expect(result).toContain('Actual content');
+      expect(result).toContain('Final result summary');
+      expect(result).not.toContain('> Final result summary');
       expect(result).not.toContain('> Thinking');
       expect(result).not.toContain('> Analyzing');
     });
@@ -185,6 +241,16 @@ Line 2`;
       const result = cleaner.ensureMarkdownFormatting(input);
       expect(result).toBe('Line with spaces\nAnother line');
     });
+
+    test('handles null input', () => {
+      const result = cleaner.ensureMarkdownFormatting(null);
+      expect(result).toBeNull();
+    });
+
+    test('handles non-string input', () => {
+      const result = cleaner.ensureMarkdownFormatting(123);
+      expect(result).toBe(123);
+    });
   });
 
   describe('cleanAmazonQOutput (integration)', () => {
@@ -206,6 +272,34 @@ Result text\x1b[0m`;
       expect(result).not.toContain('● Running');
       expect(result).not.toContain('\x1b');
       expect(result).not.toContain('�');
+    });
+
+    test('preserves code blocks with backticks in full pipeline', () => {
+      const input = `\x1b[31mBanner\x1b[0m
+● Running analysis
+● Completed in 1s
+🎯 **Application observability for AWS Assistant Result**
+
+> Analyzing code...
+> Code Fix:
+
+Fix the issue by updating:
+
+\`\`\`python
+def hello():
+    print("world")
+\`\`\`
+
+Use \`variableName\` in the code.`;
+
+      const result = cleaner.cleanAmazonQOutput(input);
+      expect(result).toContain('```python');
+      expect(result).toContain('def hello():');
+      expect(result).toContain('```');
+      expect(result).toContain('`variableName`');
+      expect(result).toContain('Code Fix:');
+      expect(result).not.toContain('> Analyzing code...');
+      expect(result).not.toContain('Banner');
     });
 
     test('handles real Amazon Q 1.19.0 style output', () => {

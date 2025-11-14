@@ -1,4 +1,4 @@
-# Application Observability for AWS Action
+# Application observability for AWS Action
 
 A GitHub Action that brings Agentic AI capabilities directly into GitHub, enabling service issue investigation with live production context, automated Application Signals enablement, and AI-powered bug fixing with live telemetry data.
 
@@ -6,7 +6,7 @@ This action is powered by the [AWS Application Signals MCP](https://github.com/a
 
 ## ✨ Features
 
-With a one-time setup of Application Observability for AWS Action workflow for your GitHub repository, developers can:
+With a one-time setup of Application observability for AWS Action workflow for your GitHub repository, developers can:
 
 1. **Troubleshoot Production Issues**: Investigate and fix production problems using live telemetry and SLO data from AWS Application Signals via MCP
 2. **Application Observability Enablement Assistance**: Get help enabling Application Signals with integrated Application Signals MCP and domain knowledge as context
@@ -23,52 +23,87 @@ With a one-time setup of Application Observability for AWS Action workflow for y
 
 ### Setup Steps (One-Time)
 
-#### 1. Add AWS Credentials as Repository Secrets
+#### 1. Set up AWS Credentials
 
-Navigate to your repository Settings > Secrets and variables > Actions, and add:
+This action relies on the [aws-actions/configure-aws-credentials](https://github.com/aws-actions/configure-aws-credentials) action to set up AWS authentication in your GitHub Actions Environment. We **highly recommend** using OpenID Connect (OIDC) to authenticate with AWS. OIDC allows your GitHub Actions workflows to access AWS resources using short-lived AWS credentials so you do not have to store long-term credentials in your repository.
+
+To use OIDC authentication, you need to first create an IAM Identity Provider that trusts GitHub's OIDC endpoint. This can be done the AWS Management Console by adding a new Identity Provider with the following details:
+* **Provider Type**: OpenID Connect
+* **Provider URL**: `https://token.actions.githubusercontent.com`
+* **Audience**: `sts.amazonaws.com`
+
+Next, create a new IAM policy with the required permissions for this GitHub Action. See the [Required Permissions](#required-permissions) section below for more details.
+
+Finally, create an IAM Role via the AWS Management Console with the following trust policy template:
 
 ```
-AWS_ACCESS_KEY_ID         # Your AWS Access Key
-AWS_SECRET_ACCESS_KEY     # Your AWS Secret Key
-AWS_REGION                # Optional, defaults to us-east-1
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<AWS_ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:<GITHUB_ORG>/<GITHUB_REPOSITORY>:ref:refs/heads/<GITHUB_BRANCH>"
+        }
+      }
+    }
+  ]
+}
 ```
 
-These credentials will be used to set up Amazon Q Developer CLI and the APM MCP server.
+In the **Permissions policies** page, add the IAM permissions policy you created.
 
-#### 2. Add Workflow Configuration
+See the [configure-aws-credentials OIDC Quick Start Guide](https://github.com/aws-actions/configure-aws-credentials/tree/main?tab=readme-ov-file#quick-start-oidc-recommended) for more information about setting up OIDC with AWS.
+
+#### 2. Configure Secrets and Add Workflow
+
+Go to your repository → Settings → Secrets and variables → Actions.
+
+Create a new repository secret `AWSAPM_ROLE_ARN` and set it to the IAM role you created in the previous step.
+You can also specify your region by setting a repository variable `AWS_REGION`.
 
 Create `.github/workflows/awsapm.yml` in your repository:
 
 ```yaml
-name: Application Observability
+name: Application observability for AWS
 
 on:
   issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
+    types: [created, edited]
   issues:
-    types: [opened, assigned]
+    types: [opened, assigned, edited]
 
 jobs:
   apm-analysis:
-    if: contains(github.event.comment.body, '@awsapm') || contains(github.event.issue.body, '@awsapm')
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@awsapm')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@awsapm') || contains(github.event.issue.title, '@awsapm')))
     runs-on: ubuntu-latest
     permissions:
       contents: write        # To create branches for PRs
       pull-requests: write   # To post comments on PRs
       issues: write          # To post comments on issues
-      checks: write          # To create check runs with detailed results
+      id-token: write        # required to configure AWS credentials using OIDC 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run AWS APM Agent
-        uses: aws-actions/apm-action@v1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws_region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWSAPM_ROLE_ARN }} # this should be the ARN of the IAM role you created for GitHub Actions
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Run Application observability for AWS Investigation
+        uses: aws-actions/application-observability-for-aws@v1
 ```
 
 #### 3. Start Using the Action
@@ -93,17 +128,57 @@ Hi @awsapm, I want to know how many GenAI tokens have been used by my services?
 | `target_branch` | The branch to merge PRs into | No | Repository default |
 | `branch_prefix` | Prefix for created branches | No | `awsapm/` |
 | `github_token` | GitHub token for API calls | No | `${{ github.token }}` |
-| `aws_access_key_id` | AWS Access Key for Q Developer CLI & MCP | Yes | - |
-| `aws_secret_access_key` | AWS Secret Key for Q Developer CLI & MCP | Yes | - |
-| `aws_session_token` | AWS session token for temporary credentials | No | - |
-| `aws_region` | AWS Region | No | `us-east-1` |
 | `custom_prompt` | Custom instructions for the AI agent | No | - |
 
 ### Required Permissions
 
 The action requires:
 
-1. **AWS Permissions**: Same as [AWS Application Signals MCP](https://github.com/awslabs/mcp/tree/main/src/cloudwatch-appsignals-mcp-server#configuration)
+1. **AWS Permissions**: 
+The IAM role assumed by GitHub Actions needs to have a permission policy with the following permissions in order to gain full access to the Application Signals MCP Tool Call suite.
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "q:SendMessage",
+                "application-signals:ListServices",
+                "application-signals:GetService",
+                "application-signals:ListServiceOperations",
+                "application-signals:ListServiceLevelObjectives",
+                "application-signals:GetServiceLevelObjective",
+                "application-signals:ListAuditFindings",
+                "cloudwatch:DescribeAlarms",
+                "cloudwatch:DescribeAlarmHistory",
+                "cloudwatch:ListMetrics",
+                "cloudwatch:GetMetricData",
+                "cloudwatch:GetMetricStatistics",
+                "logs:DescribeLogGroups",
+                "logs:DescribeQueryDefinitions",
+                "logs:ListLogAnomalyDetectors",
+                "logs:ListAnomalies",
+                "logs:StartQuery",
+                "logs:StopQuery",
+                "logs:GetQueryResults",
+                "logs:FilterLogEvents",
+                "xray:GetTraceSummaries",
+                "xray:GetTraceSegmentDestination",
+                "synthetics:GetCanary",
+                "synthetics:GetCanaryRuns",
+                "s3:GetObject",
+                "s3:ListBucket",
+                "iam:GetRole",
+                "iam:ListAttachedRolePolicies",
+                "iam:GetPolicy",
+                "iam:GetPolicyVersion"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
 2. **GitHub Permissions**:
    - `contents: write` - To create branches for PRs
    - `pull-requests: write` - To post comments on PRs

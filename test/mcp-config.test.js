@@ -26,8 +26,50 @@ describe('MCPConfigManager', () => {
 
       const config = manager.buildMCPConfig();
 
-      expect(config.mcpServers['awslabs.cloudwatch-appsignals-mcp']).toBeDefined();
-      expect(config.mcpServers['awslabs.cloudwatch-appsignals-mcp'].command).toBe('uvx');
+      expect(config.mcpServers['applicationsignals']).toBeDefined();
+      expect(config.mcpServers['applicationsignals'].command).toBe('uvx');
+    });
+
+    test('includes CloudWatch server when enabled and credentials present', () => {
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      process.env.ENABLE_CLOUDWATCH_MCP = 'true';
+
+      const config = manager.buildMCPConfig();
+
+      expect(config.mcpServers['awslabs.cloudwatch-mcp-server']).toBeDefined();
+      expect(config.mcpServers['awslabs.cloudwatch-mcp-server'].command).toBe('uvx');
+      expect(config.mcpServers['awslabs.cloudwatch-mcp-server'].args).toContain('awslabs.cloudwatch-mcp-server@latest');
+    });
+
+    test('excludes CloudWatch server when ENABLE_CLOUDWATCH_MCP is false', () => {
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      process.env.ENABLE_CLOUDWATCH_MCP = 'false';
+
+      const config = manager.buildMCPConfig();
+
+      expect(config.mcpServers['awslabs.cloudwatch-mcp-server']).toBeUndefined();
+    });
+
+    test('excludes CloudWatch server when ENABLE_CLOUDWATCH_MCP is missing', () => {
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      delete process.env.ENABLE_CLOUDWATCH_MCP;
+
+      const config = manager.buildMCPConfig();
+
+      expect(config.mcpServers['awslabs.cloudwatch-mcp-server']).toBeUndefined();
+    });
+
+    test('excludes CloudWatch server when credentials missing even if enabled', () => {
+      delete process.env.AWS_ACCESS_KEY_ID;
+      delete process.env.AWS_SECRET_ACCESS_KEY;
+      process.env.ENABLE_CLOUDWATCH_MCP = 'true';
+
+      const config = manager.buildMCPConfig();
+
+      expect(config.mcpServers['awslabs.cloudwatch-mcp-server']).toBeUndefined();
     });
 
     test('includes GitHub server when token is present', () => {
@@ -102,6 +144,40 @@ describe('MCPConfigManager', () => {
     });
   });
 
+  describe('hasCloudWatchAccess', () => {
+    test('returns true when ENABLE_CLOUDWATCH_MCP is true and credentials present', () => {
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      process.env.ENABLE_CLOUDWATCH_MCP = 'true';
+
+      expect(manager.hasCloudWatchAccess()).toBe(true);
+    });
+
+    test('returns false when ENABLE_CLOUDWATCH_MCP is false', () => {
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      process.env.ENABLE_CLOUDWATCH_MCP = 'false';
+
+      expect(manager.hasCloudWatchAccess()).toBe(false);
+    });
+
+    test('returns false when ENABLE_CLOUDWATCH_MCP is missing', () => {
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      delete process.env.ENABLE_CLOUDWATCH_MCP;
+
+      expect(manager.hasCloudWatchAccess()).toBe(false);
+    });
+
+    test('returns false when credentials missing even if enabled', () => {
+      delete process.env.AWS_ACCESS_KEY_ID;
+      delete process.env.AWS_SECRET_ACCESS_KEY;
+      process.env.ENABLE_CLOUDWATCH_MCP = 'true';
+
+      expect(manager.hasCloudWatchAccess()).toBe(false);
+    });
+  });
+
   describe('hasGitHubToken', () => {
     test('returns true when token present', () => {
       process.env.GITHUB_TOKEN = 'ghp_test123';
@@ -127,6 +203,15 @@ describe('MCPConfigManager', () => {
       expect(config.env.MCP_RUN_FROM).toBe('awsapm-gh');
     });
 
+    test('getCloudWatchServerConfig returns valid config', () => {
+      const config = manager.getCloudWatchServerConfig();
+
+      expect(config.command).toBe('uvx');
+      expect(config.args).toEqual(['awslabs.cloudwatch-mcp-server@latest']);
+      expect(config.transportType).toBe('stdio');
+      expect(config.env.MCP_RUN_FROM).toBe('awsapm-gh');
+    });
+
     test('getGitHubServerConfig returns Docker config', () => {
       const config = manager.getGitHubServerConfig('test-token');
 
@@ -143,7 +228,18 @@ describe('MCPConfigManager', () => {
 
       expect(Array.isArray(tools)).toBe(true);
       expect(tools.length).toBeGreaterThan(0);
-      expect(tools[0]).toContain('mcp__awslabs_cloudwatch-appsignals-mcp-server__');
+      expect(tools[0]).toContain('mcp__applicationsignals__');
+    });
+
+    test('getCloudWatchToolsList returns array with 11 tools', () => {
+      const tools = manager.getCloudWatchToolsList();
+
+      expect(Array.isArray(tools)).toBe(true);
+      expect(tools.length).toBe(11);
+      expect(tools).toContain('mcp__awslabs_cloudwatch-mcp-server__get_metric_metadata');
+      expect(tools).toContain('mcp__awslabs_cloudwatch-mcp-server__get_metric_data');
+      expect(tools).toContain('mcp__awslabs_cloudwatch-mcp-server__analyze_metric');
+      expect(tools).toContain('mcp__awslabs_cloudwatch-mcp-server__execute_log_insights_query');
     });
 
     test('getGitHubToolsList returns array', () => {

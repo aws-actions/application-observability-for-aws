@@ -55,6 +55,21 @@ describe('BaseCLIExecutor', () => {
     });
   });
 
+  describe('setupConfiguration', () => {
+    test('returns null by default', async () => {
+      const result = await executor.setupConfiguration();
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getEnvironmentVariables', () => {
+    test('returns process environment by default', () => {
+      const env = executor.getEnvironmentVariables();
+      expect(env).toBeDefined();
+      expect(typeof env).toBe('object');
+    });
+  });
+
   describe('spawnCLIProcess', () => {
     test('creates process with correct stdio configuration', () => {
       const mockProcess = new EventEmitter();
@@ -200,6 +215,39 @@ describe('BaseCLIExecutor', () => {
 
       outputPromise.then(({ output }) => {
         expect(output).toBe('part1part2part3');
+        done();
+      });
+    });
+
+    test('handles process error event', (done) => {
+      const mockProcess = new EventEmitter();
+      mockProcess.stdout = new EventEmitter();
+      mockProcess.stderr = new EventEmitter();
+
+      const outputPromise = executor.captureOutput(mockProcess);
+
+      const testError = new Error('Process crashed');
+      mockProcess.emit('error', testError);
+
+      outputPromise.catch((error) => {
+        expect(error).toBe(testError);
+        expect(core.error).toHaveBeenCalled();
+        done();
+      });
+    });
+
+    test('uses exit code 0 when code is null', (done) => {
+      const mockProcess = new EventEmitter();
+      mockProcess.stdout = new EventEmitter();
+      mockProcess.stderr = new EventEmitter();
+
+      const outputPromise = executor.captureOutput(mockProcess);
+
+      mockProcess.stdout.emit('data', Buffer.from('output'));
+      mockProcess.emit('close', null); // null exit code
+
+      outputPromise.then(({ exitCode }) => {
+        expect(exitCode).toBe(0);
         done();
       });
     });

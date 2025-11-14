@@ -81,10 +81,46 @@ class OutputCleaner {
 
     const filteredLines = lines.slice(startIndex);
 
-    // Still remove thinking statements (lines starting with ">")
-    const finalLines = filteredLines.filter(line => {
+    // Amazon Q CLI uses ">" prefix for both thinking statements and final results:
+    // - Thinking statements (intermediate): "> Analyzing the code...", "> Checking metrics..."
+    // - Final result (last one): "> SLO Status for service:", "> Root Cause Analysis:", etc.
+    // We keep only the LAST ">" line as it contains the actual result/summary we want to display
+
+    // Find all lines starting with ">" (thinking statements and results)
+    const linesWithArrow = [];
+    filteredLines.forEach((line, index) => {
+      if (line.trim().startsWith('>')) {
+        linesWithArrow.push(index);
+      }
+    });
+
+    // Remove thinking statements (lines starting with ">") but keep the last one (strip the ">")
+    const lastArrowIndex = linesWithArrow.length > 0 ? linesWithArrow[linesWithArrow.length - 1] : -1;
+
+    const finalLines = filteredLines.map((line, index) => {
       const trimmed = line.trim();
-      return !trimmed.startsWith('>');
+
+      // For the last line starting with ">", remove the ">" symbol
+      if (trimmed.startsWith('>') && index === lastArrowIndex) {
+        return line.replace(/^\s*>\s*/, '');
+      }
+
+      return line;
+    }).filter((line, index) => {
+      const originalTrimmed = filteredLines[index].trim();
+
+      // Keep lines that don't start with ">"
+      if (!originalTrimmed.startsWith('>')) {
+        return true;
+      }
+
+      // Keep the last line starting with ">" (now with ">" removed)
+      if (index === lastArrowIndex) {
+        return true;
+      }
+
+      // Remove all other thinking statements
+      return false;
     });
 
     return finalLines.join('\n').trim();

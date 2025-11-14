@@ -12,7 +12,21 @@ class MCPConfigManager {
   getApplicationSignalsServerConfig() {
     return {
       command: "uvx",
-      args: ["awslabs.cloudwatch-appsignals-mcp-server@latest"],
+      args: ["awslabs.cloudwatch-applicationsignals-mcp-server@latest"],
+      env: {
+        MCP_RUN_FROM: "awsapm-gh"
+      },
+      transportType: "stdio"
+    };
+  }
+
+  /**
+   * Get AWS CloudWatch MCP server configuration
+   */
+  getCloudWatchServerConfig() {
+    return {
+      command: "uvx",
+      args: ["awslabs.cloudwatch-mcp-server@latest"],
       env: {
         MCP_RUN_FROM: "awsapm-gh"
       },
@@ -49,20 +63,39 @@ class MCPConfigManager {
    */
   getApplicationSignalsToolsList() {
     return [
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__list_monitored_services",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__get_service_detail",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__list_service_operations",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__list_slis",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__list_slos",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__get_slo",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__search_transaction_spans",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__query_sampled_traces",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__query_service_metrics",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__audit_services",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__audit_slos",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__audit_service_operations",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__get_enablement_guide",
-      "mcp__awslabs_cloudwatch-appsignals-mcp-server__analyze_canary_failures"
+      "mcp__applicationsignals__list_monitored_services",
+      "mcp__applicationsignals__get_service_detail",
+      "mcp__applicationsignals__list_service_operations",
+      "mcp__applicationsignals__list_slis",
+      "mcp__applicationsignals__list_slos",
+      "mcp__applicationsignals__get_slo",
+      "mcp__applicationsignals__search_transaction_spans",
+      "mcp__applicationsignals__query_sampled_traces",
+      "mcp__applicationsignals__query_service_metrics",
+      "mcp__applicationsignals__audit_services",
+      "mcp__applicationsignals__audit_slos",
+      "mcp__applicationsignals__audit_service_operations",
+      "mcp__applicationsignals__get_enablement_guide",
+      "mcp__applicationsignals__analyze_canary_failures"
+    ];
+  }
+
+  /**
+   * Get list of AWS CloudWatch MCP tools for auto-approval
+   */
+  getCloudWatchToolsList() {
+    return [
+      "mcp__awslabs_cloudwatch-mcp-server__get_metric_metadata",
+      "mcp__awslabs_cloudwatch-mcp-server__get_metric_data",
+      "mcp__awslabs_cloudwatch-mcp-server__get_recommended_metric_alarms",
+      "mcp__awslabs_cloudwatch-mcp-server__analyze_metric",
+      "mcp__awslabs_cloudwatch-mcp-server__get_active_alarms",
+      "mcp__awslabs_cloudwatch-mcp-server__get_alarm_history",
+      "mcp__awslabs_cloudwatch-mcp-server__describe_log_groups",
+      "mcp__awslabs_cloudwatch-mcp-server__analyze_log_group",
+      "mcp__awslabs_cloudwatch-mcp-server__execute_log_insights_query",
+      "mcp__awslabs_cloudwatch-mcp-server__get_logs_insight_query_results",
+      "mcp__awslabs_cloudwatch-mcp-server__cancel_logs_insight_query"
     ];
   }
 
@@ -93,9 +126,20 @@ class MCPConfigManager {
       const applicationSignalsConfig = this.getApplicationSignalsServerConfig();
 
       // Amazon Q CLI format
-      config.mcpServers["awslabs.cloudwatch-appsignals-mcp"] = {
+      config.mcpServers["applicationsignals"] = {
         ...applicationSignalsConfig,
         autoApprove: this.getApplicationSignalsToolsList(),
+        disabled: false
+      };
+    }
+
+    // Add AWS CloudWatch MCP server if explicitly enabled and credentials available
+    if (this.hasCloudWatchAccess()) {
+      const cloudwatchConfig = this.getCloudWatchServerConfig();
+
+      config.mcpServers["awslabs.cloudwatch-mcp-server"] = {
+        ...cloudwatchConfig,
+        autoApprove: this.getCloudWatchToolsList(),
         disabled: false
       };
     }
@@ -122,6 +166,13 @@ class MCPConfigManager {
   }
 
   /**
+   * Check if CloudWatch MCP access is enabled and credentials are available
+   */
+  hasCloudWatchAccess() {
+    return process.env.ENABLE_CLOUDWATCH_MCP === 'true' && this.hasAWSCredentials();
+  }
+
+  /**
    * Check if GitHub token is available
    */
   hasGitHubToken() {
@@ -131,7 +182,6 @@ class MCPConfigManager {
   /**
    * Get AWS environment variables for MCP server
    */
-  // TODO: support IAM role consumed by aws-actions/configure-aws-credentials
   getAWSEnvVars() {
     return {
       aws_access_key_id: process.env.AWS_ACCESS_KEY_ID,

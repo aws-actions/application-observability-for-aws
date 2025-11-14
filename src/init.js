@@ -72,6 +72,9 @@ async function run() {
         isPR = false;
         isEditEvent = payload.action === 'edited';
         triggerUsername = issue.user?.login || 'unknown';
+        // For 'issues' event, there's no comment - the trigger is in the issue body/title itself
+        // We still want to search for existing result comments when editing
+        commentId = null; // Explicitly set to null for clarity
       }
     } else if (testMode === 'true') {
       // In test mode, always trigger and use custom prompt
@@ -151,15 +154,27 @@ async function run() {
             per_page: 100,
           });
 
-          // Find the most recent result comment (contains our markers)
-          const existingComment = comments
-            .find(c =>
-              c.body && (
-                c.body.includes('Application observability for AWS Investigation Complete') ||
-                c.body.includes('Application observability for AWS Investigation Failed') ||
-                c.body.includes('Application observability for AWS Investigation Started')
-              )
+          let existingComment = null;
+
+          if (commentId) {
+            // For issue_comment events: Find the result comment after the specific trigger comment
+            const triggerCommentIndex = comments.findIndex(c => c.id == commentId);
+
+            if (triggerCommentIndex !== -1) {
+              existingComment = comments
+                .slice(triggerCommentIndex + 1) // Start from next comment after trigger
+                .find(c =>
+                  c.body && c.body.includes('Application observability for AWS Investigation')
+                );
+            } else {
+              core.warning(`Trigger comment ID ${commentId} not found in comments list. Creating new comment.`);
+            }
+          } else {
+            // For issues events: Find the first result comment
+            existingComment = comments.find(c =>
+              c.body && c.body.includes('Application observability for AWS Investigation')
             );
+          }
 
           if (existingComment) {
             awsapmCommentId = existingComment.id;
@@ -264,7 +279,6 @@ async function run() {
     core.setOutput('issue_number', issueNumber);
     core.setOutput('is_pr', isPR);
     core.setOutput('trigger_text', triggerText);
-    core.setOutput('TRACING_MODE', tracingMode);
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

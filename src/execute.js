@@ -5,6 +5,7 @@ const github = require('@actions/github');
 const fs = require('fs');
 const path = require('path');
 const { AmazonQCLIExecutor } = require('./executors/amazonq-cli-executor');
+const { OutputCleaner } = require('./utils/output-cleaner');
 
 /**
  * Main entry point for Application observability for AWS investigation
@@ -59,10 +60,14 @@ async function run() {
 Please check the workflow logs for more details and ensure proper authentication is configured.`;
     }
 
-    // Save the response with unique run ID to avoid conflicts on self-hosted runners
+    // Clean the output to ensure proper markdown formatting for GitHub
+    const cleaner = new OutputCleaner();
+    const cleanedResult = cleaner.clean(investigationResult);
+
+    // Save the cleaned response with unique run ID to avoid conflicts on self-hosted runners
     const runId = process.env.GITHUB_RUN_ID || Date.now();
     const responseFile = path.join(outputDir, `awsapm-response-${runId}.txt`);
-    fs.writeFileSync(responseFile, investigationResult);
+    fs.writeFileSync(responseFile, cleanedResult);
 
     // Save raw output for integration test validation
     if (rawOutput) {

@@ -205,6 +205,17 @@ Line 2 of custom`;
       const prompt2 = await createGeneralPrompt(mockContext, mockRepoInfo, 'input 2');
       expect(prompt1).not.toBe(prompt2);
     });
+
+    test('uses fallback branch name when not provided', async () => {
+      const prompt = await createGeneralPrompt(mockContext, mockRepoInfo, 'test');
+      expect(prompt).toContain('awsapm-branch');
+    });
+
+    test('uses provided branch name when supplied', async () => {
+      const prompt = await createGeneralPrompt(mockContext, mockRepoInfo, 'test', 'test-token', 'custom-branch-123');
+      expect(prompt).toContain('custom-branch-123');
+      expect(prompt).not.toContain('awsapm-branch');
+    });
   });
 
   describe('PR context handling', () => {

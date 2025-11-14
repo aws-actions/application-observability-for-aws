@@ -333,14 +333,6 @@ Line 2`;
       expect(core.setOutput).toHaveBeenCalledWith('AWSAPM_BRANCH', expect.any(String));
       expect(core.setOutput).toHaveBeenCalledWith('TARGET_BRANCH', expect.any(String));
     });
-
-    test('sets tracing mode from environment', async () => {
-      process.env.TRACING_MODE = 'true';
-
-      await run();
-
-      expect(core.setOutput).toHaveBeenCalledWith('TRACING_MODE', 'true');
-    });
   });
 
   describe('error handling', () => {
@@ -479,7 +471,7 @@ Line 2`;
 
   describe('permission checking', () => {
     test('sets contains_trigger to false when user lacks permissions', async () => {
-      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValue({
+      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValueOnce({
         data: { permission: 'read' }
       });
 
@@ -489,7 +481,7 @@ Line 2`;
     });
 
     test('allows user with write permission', async () => {
-      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValue({
+      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValueOnce({
         data: { permission: 'write' }
       });
 
@@ -499,13 +491,63 @@ Line 2`;
     });
 
     test('allows user with admin permission', async () => {
-      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValue({
+      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValueOnce({
         data: { permission: 'admin' }
       });
 
       await run();
 
       expect(core.setOutput).toHaveBeenCalledWith('contains_trigger', 'true');
+    });
+
+    test('allows specific user in ALLOWED_NON_WRITE_USERS list', async () => {
+      process.env.ALLOWED_NON_WRITE_USERS = 'test-user,another-user';
+      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValueOnce({
+        data: { permission: 'read' }
+      });
+
+      await run();
+
+      expect(core.setOutput).toHaveBeenCalledWith('contains_trigger', 'true');
+      delete process.env.ALLOWED_NON_WRITE_USERS;
+    });
+
+    test('allows all users when wildcard (*) is used', async () => {
+      process.env.ALLOWED_NON_WRITE_USERS = '*';
+      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValueOnce({
+        data: { permission: 'read' }
+      });
+
+      await run();
+
+      expect(core.setOutput).toHaveBeenCalledWith('contains_trigger', 'true');
+      delete process.env.ALLOWED_NON_WRITE_USERS;
+    });
+
+    test('posts access denied comment when permissions insufficient', async () => {
+      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValueOnce({
+        data: { permission: 'read' }
+      });
+
+      await run();
+
+      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.stringContaining('Access Denied')
+        })
+      );
+      expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('insufficient permissions'));
+    });
+
+    test('handles comment post error when access denied', async () => {
+      mockOctokit.rest.repos.getCollaboratorPermissionLevel.mockResolvedValueOnce({
+        data: { permission: 'read' }
+      });
+      mockOctokit.rest.issues.createComment.mockRejectedValueOnce(new Error('API error'));
+
+      await run();
+
+      expect(core.error).toHaveBeenCalledWith(expect.stringContaining('Failed to post access denied comment'));
     });
   });
 
@@ -555,12 +597,17 @@ Line 2`;
     test('updates existing comment when edit action is detected', async () => {
       mockContext.payload.action = 'edited';
       mockContext.payload.comment.body = '@awsapm updated request';
+      mockContext.payload.comment.id = 123; // Trigger comment ID
 
-      // Mock listComments to return an existing comment
+      // Mock listComments to return the trigger comment followed by the result comment
       mockOctokit.rest.issues.listComments.mockResolvedValue({
         data: [
           {
-            id: 999,
+            id: 123, // Trigger comment (the one being edited)
+            body: '@awsapm updated request'
+          },
+          {
+            id: 999, // Result comment that comes after trigger
             body: '🔍 **Application observability for AWS Investigation Started**\nOld content'
           }
         ]
@@ -583,11 +630,16 @@ Line 2`;
 
     test('finds existing comment with Complete marker', async () => {
       mockContext.payload.action = 'edited';
+      mockContext.payload.comment.id = 123; // Trigger comment ID
 
       mockOctokit.rest.issues.listComments.mockResolvedValue({
         data: [
           {
-            id: 888,
+            id: 123, // Trigger comment
+            body: '@awsapm analyze this'
+          },
+          {
+            id: 888, // Result comment after trigger
             body: '✅ **Application observability for AWS Investigation Complete**\nResults here'
           }
         ]
@@ -606,11 +658,16 @@ Line 2`;
 
     test('finds existing comment with Failed marker', async () => {
       mockContext.payload.action = 'edited';
+      mockContext.payload.comment.id = 123; // Trigger comment ID
 
       mockOctokit.rest.issues.listComments.mockResolvedValue({
         data: [
           {
-            id: 777,
+            id: 123, // Trigger comment
+            body: '@awsapm analyze this'
+          },
+          {
+            id: 777, // Result comment after trigger
             body: '❌ **Application observability for AWS Investigation Failed**\nError details'
           }
         ]
@@ -631,10 +688,18 @@ Line 2`;
       const longText = '@awsapm ' + 'a'.repeat(400);
       mockContext.payload.action = 'edited';
       mockContext.payload.comment.body = longText;
+      mockContext.payload.comment.id = 123; // Trigger comment ID
 
       mockOctokit.rest.issues.listComments.mockResolvedValue({
         data: [
-          { id: 666, body: 'Application observability for AWS Investigation Started' }
+          {
+            id: 123, // Trigger comment
+            body: longText
+          },
+          {
+            id: 666, // Result comment after trigger
+            body: 'Application observability for AWS Investigation Started'
+          }
         ]
       });
 
