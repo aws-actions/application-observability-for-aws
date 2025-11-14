@@ -51,6 +51,15 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Validate test mode usage
+      if: inputs.test_mode == 'true'
+      shell: bash
+      run: |
+        if [[ "${{ github.repository }}" != *"application-observability-for-aws" || "${{ github.ref_name }}" != "integ-test" ]]; then
+          echo "::error::test_mode can only be used from the application-observability-for-aws repository main branch"
+          exit 1
+        fi
+
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:
