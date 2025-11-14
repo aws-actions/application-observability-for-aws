@@ -32,6 +32,7 @@ jobs:
         uses: ./
         with:
           test_mode: "true"
+          custom_prompt: "Use the list_monitored_services tool to show me all services currently monitored by AWS Application Signals. Also use the get_active_alarms tool to show me all active CloudWatch alarms."
 
       - name: Upload test outputs
         if: always()
@@ -47,31 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Download test outputs
-        uses: actions/download-artifact@v4
-        with:
-          name: integration-test-outputs
-          path: ./test-outputs
-
       - name: Verify MCP tool usage
-        shell: bash
-        run: |
-          echo "Checking for AWS Application Signals MCP usage..."
-          
-          RAW_OUTPUT_FILE="./test-outputs/awsapm-raw-output.txt"
-          
-          if [[ ! -f "$RAW_OUTPUT_FILE" ]]; then
-            echo "ERROR: Raw output file not found"
-            exit 1
-          fi
-          
-          # Check for the specific tool call on one line (handling ANSI color codes)
-          if grep -qE "Using tool: list_monitored_services.*from mcp server.*awslabs\.cloudwatch-appsignals-mcp" "$RAW_OUTPUT_FILE"; then
-            echo "PASSED - list_monitored_services tool was called from AWS Application Signals MCP"
-          else
-            echo "FAILED: Expected tool call not found"
-            echo "Looking for: Using tool: list_monitored_services...from mcp server...awslabs.cloudwatch-appsignals-mcp"
-            echo "Raw output content:"
-            cat "$RAW_OUTPUT_FILE"
-            exit 1
-          fi
+        uses: ./.github/actions/verify-mcp-usage
+        with:
+          artifact_name: integration-test-outputs
