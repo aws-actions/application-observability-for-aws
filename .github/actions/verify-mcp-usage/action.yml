@@ -32,7 +32,7 @@ runs:
         fi
         
         # Check for both MCP tool calls
-        if grep -qE "Using tool: list_monitored_services.*from mcp server.*awslabs\.cloudwatch-appsignals-mcp" "$RAW_OUTPUT_FILE"; then
+        if grep -qE "Using tool: list_monitored_services.*from mcp server.*applicationsignals" "$RAW_OUTPUT_FILE"; then
           echo "PASSED - list_monitored_services tool was called from AWS Application Signals MCP"
         else
           echo "FAILED: list_monitored_services tool call not found"
@@ -41,7 +41,7 @@ runs:
           exit 1
         fi
         
-        if grep -qE "Using tool: get_active_alarms.*from mcp server.*awslabs\.cloudwatch-mcp" "$RAW_OUTPUT_FILE"; then
+        if grep -qE "Using tool: get_active_alarms.*from mcp server.*awslabs\.cloudwatch-mcp-server" "$RAW_OUTPUT_FILE"; then
           echo "PASSED - get_active_alarms tool was called from CloudWatch MCP"
         else
           echo "FAILED: get_active_alarms tool call not found"
