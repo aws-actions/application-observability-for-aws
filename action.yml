@@ -55,8 +55,8 @@ runs:
       if: inputs.test_mode == 'true'
       shell: bash
       run: |
-        if [[ "${{ github.repository }}" != *"application-observability-for-aws" || "${{ github.ref_name }}" != "integ-test" ]]; then
-          echo "::error::test_mode can only be used from the application-observability-for-aws repository main branch"
+        if [[ "${{ github.repository }}" != "aws-actions/application-observability-for-aws" || "${{ github.ref_name }}" != "main" ]]; then
+          echo "::error::test_mode can only be used from the aws-actions/application-observability-for-aws repository main branch"
           exit 1
         fi
 
