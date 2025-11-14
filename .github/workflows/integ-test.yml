@@ -43,7 +43,7 @@ jobs:
           retention-days: 7
 
   verify-mcp-usage:
-    needs: awsapm-investigation
+    needs: awsapm-integ-test
     runs-on: ubuntu-latest
     if: always()
     steps:
