@@ -21,19 +21,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          fetch-depth: 1
+          role-to-assume: ${{ secrets.AWSAPM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
       - name: Run Application Observability for AWS Investigation
         uses: ./
         with:
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws_region: ${{ env.AWS_DEFAULT_REGION }}
-          bot_name: "@awsapm"
-          tracing_mode: "true"
           test_mode: "true"
-          custom_prompt: "Use the list_monitored_services tool to show me all services currently monitored by AWS Application Signals. I need to see the complete list of monitored services."
 
       - name: Upload test outputs
         if: always()
