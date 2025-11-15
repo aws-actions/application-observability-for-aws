@@ -20,7 +20,6 @@ async function run() {
     const targetBranch = process.env.TARGET_BRANCH || '';
     const allowedNonWriteUsers = process.env.ALLOWED_NON_WRITE_USERS || '';
     const customPrompt = process.env.CUSTOM_PROMPT || '';
-    const tracingMode = process.env.TRACING_MODE || 'false';
     const testMode = process.env.TEST_MODE || 'false';
 
     // Function to check for bot name trigger phrase

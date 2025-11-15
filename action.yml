@@ -85,7 +85,6 @@ runs:
         ALLOWED_NON_WRITE_USERS: ${{ inputs.allowed_non_write_users }}
         GITHUB_RUN_ID: ${{ github.run_id }}
         DEFAULT_WORKFLOW_TOKEN: ${{ github.token }}
-        TRACING_MODE: ${{ inputs.tracing_mode }}
         TEST_MODE: ${{ inputs.test_mode }}
 
     - name: Install CLI Tools
