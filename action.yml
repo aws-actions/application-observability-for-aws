@@ -133,6 +133,7 @@ runs:
         GITHUB_TOKEN: ${{ steps.init.outputs.GITHUB_TOKEN }}
         ENABLE_CLOUDWATCH_MCP: ${{ inputs.enable_cloudwatch_mcp }}
         INPUT_PROMPT_FILE: ${{ runner.temp }}/awsapm-prompts/awsapm-prompt.txt
+        TEST_MODE: ${{ inputs.test_mode }}
 
     - name: Update comment with results
       if: steps.init.outputs.contains_trigger == 'true' && steps.init.outputs.awsapm_comment_id && always()

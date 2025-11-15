@@ -69,8 +69,8 @@ Please check the workflow logs for more details and ensure proper authentication
     const responseFile = path.join(outputDir, `awsapm-response-${runId}.txt`);
     fs.writeFileSync(responseFile, cleanedResult);
 
-    // Save raw output for integration test validation
-    if (rawOutput) {
+    // Save raw output for integration test validation (only in test mode)
+    if (rawOutput && process.env.TEST_MODE === 'true') {
       const rawOutputFile = path.join(outputDir, 'awsapm-raw-output.txt');
       fs.writeFileSync(rawOutputFile, rawOutput);
     }
