@@ -251,12 +251,11 @@ async function run() {
       // Use the dynamic prompt generation with PR context
       const { createGeneralPrompt } = require('./prompt-builder');
 
-    try {
-      const finalPrompt = await createGeneralPrompt(context, repoInfo, cleanedUserRequest, githubToken, awsapmBranch);
-      fs.writeFileSync(promptFile, finalPrompt);
-    } catch (promptError) {
-      core.error(`Failed to generate dynamic prompt: ${promptError.message}`);
-
+      try {
+        const finalPrompt = await createGeneralPrompt(context, repoInfo, cleanedUserRequest, githubToken, awsapmBranch);
+        fs.writeFileSync(promptFile, finalPrompt);
+      } catch (promptError) {
+        core.error(`Failed to generate dynamic prompt: ${promptError.message}`);
         // Fallback to basic prompt if dynamic generation fails
         let fallbackPrompt = '';
         if (customPrompt) {
