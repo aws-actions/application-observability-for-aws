@@ -3,7 +3,6 @@ name: Integration Test
 on:
   push:
     branches:
-      - integ-test
       - main
   workflow_dispatch:
 
