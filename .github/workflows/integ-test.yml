@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - integ-test
   workflow_dispatch:
 
 env:
@@ -27,11 +28,33 @@ jobs:
           role-to-assume: ${{ secrets.AWSAPM_ROLE_ARN }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
-      - name: Run Application Observability for AWS Investigation
+      - name: Prepare Investigation Context
+        id: prepare
         uses: ./
         with:
           test_mode: "true"
           custom_prompt: "Use the list_monitored_services tool to show me all services currently monitored by AWS Application Signals. Also use the get_active_alarms tool to show me all active CloudWatch alarms."
+
+      - name: Run Claude Investigation
+        id: claude
+        uses: anthropics/claude-code-base-action@beta
+        with:
+          use_bedrock: "true" 
+          model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+          prompt_file: ${{ steps.prepare.outputs.prompt_file }}
+          mcp_config: ${{ steps.prepare.outputs.mcp_config_file }}
+          allowed_tools: ${{ steps.prepare.outputs.allowed_tools }}
+
+      - name: Log Claude Execution Output
+        if: always()
+        shell: bash
+        run: |
+          echo "=== Claude Execution File Content ==="
+          if [[ -f "${{ steps.claude.outputs.execution_file }}" ]]; then
+            cat "${{ steps.claude.outputs.execution_file }}"
+          else
+            echo "Execution file not found: ${{ steps.claude.outputs.execution_file }}"
+          fi
 
       - name: Upload test outputs
         if: always()
@@ -39,7 +62,8 @@ jobs:
         with:
           name: integration-test-outputs
           path: |
-            ${{ runner.temp }}/awsapm-output/
+            ${{ runner.temp }}/awsapm-prompts/
+            ${{ steps.claude.outputs.execution_file }}
           retention-days: 7
 
   verify-mcp-usage:
