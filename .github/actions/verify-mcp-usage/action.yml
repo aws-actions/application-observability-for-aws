@@ -24,28 +24,31 @@ runs:
       run: |
         echo "Checking for MCP tool usage..."
         
-        RAW_OUTPUT_FILE="${{ inputs.output_path }}/awsapm-raw-output.txt"
+        EXECUTION_FILE="${{ inputs.output_path }}/claude-execution-output.json"
         
-        if [[ ! -f "$RAW_OUTPUT_FILE" ]]; then
-          echo "ERROR: Raw output file not found"
+        if [[ ! -f "$EXECUTION_FILE" ]]; then
+          echo "ERROR: Execution file not found at $EXECUTION_FILE"
+          echo "Available files:"
+          find "${{ inputs.output_path }}" -type f | head -10
           exit 1
         fi
         
-        # Check for both MCP tool calls
-        if grep -qE "Using tool: list_monitored_services.*from mcp server.*applicationsignals" "$RAW_OUTPUT_FILE"; then
-          echo "PASSED - list_monitored_services tool was called from AWS Application Signals MCP"
+        echo "Found execution file, checking for actual tool_use calls..."
+        
+        # Check for Application Signals MCP tool_use
+        if jq -e '.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "mcp__applicationsignals__list_monitored_services")' "$EXECUTION_FILE" > /dev/null; then
+          echo "✅ PASSED - list_monitored_services tool was actually called"
         else
-          echo "FAILED: list_monitored_services tool call not found"
-          echo "Raw output content:"
-          cat "$RAW_OUTPUT_FILE"
+          echo "❌ FAILED: list_monitored_services tool_use not found"
           exit 1
         fi
         
-        if grep -qE "Using tool: get_active_alarms.*from mcp server.*awslabs\.cloudwatch-mcp-server" "$RAW_OUTPUT_FILE"; then
-          echo "PASSED - get_active_alarms tool was called from CloudWatch MCP"
+        # Check for CloudWatch MCP tool_use
+        if jq -e '.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "mcp__awslabs_cloudwatch-mcp-server__get_active_alarms")' "$EXECUTION_FILE" > /dev/null; then
+          echo "✅ PASSED - get_active_alarms tool was actually called"
         else
-          echo "FAILED: get_active_alarms tool call not found"
-          echo "Raw output content:"
-          cat "$RAW_OUTPUT_FILE"
+          echo "❌ FAILED: get_active_alarms tool_use not found"
           exit 1
         fi
+        
+        echo "🎉 All MCP tool usage verification checks passed!"
