@@ -209,14 +209,14 @@ class MCPConfigManager {
    * Check if AWS credentials are available
    */
   hasAWSCredentials() {
-    return false;
+    return !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
   }
 
   /**
    * Check if CloudWatch MCP access is enabled and credentials are available
    */
   hasCloudWatchAccess() {
-    return process.env.ENABLE_CLOUDWATCH_MCP === 'true' && this.hasAWSCredentials();
+    return false
   }
 
   /**
