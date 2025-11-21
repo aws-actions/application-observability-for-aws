@@ -33,21 +33,21 @@ runs:
           exit 1
         fi
         
-        echo "Found execution file, checking for actual tool_use calls..."
+        echo "Found execution file, checking for tool_use calls..."
         
         # Check for Application Signals MCP tool_use
         if jq -e '.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "mcp__applicationsignals__list_monitored_services")' "$EXECUTION_FILE" > /dev/null; then
-          echo "✅ PASSED - list_monitored_services tool was actually called"
+          echo "✅ PASSED - list_monitored_services tool call found"
         else
-          echo "❌ FAILED: list_monitored_services tool_use not found"
+          echo "❌ FAILED: list_monitored_services tool call not found"
           exit 1
         fi
         
         # Check for CloudWatch MCP tool_use
         if jq -e '.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "mcp__awslabs_cloudwatch-mcp-server__get_active_alarms")' "$EXECUTION_FILE" > /dev/null; then
-          echo "✅ PASSED - get_active_alarms tool was actually called"
+          echo "✅ PASSED - get_active_alarms tool call found"
         else
-          echo "❌ FAILED: get_active_alarms tool_use not found"
+          echo "❌ FAILED: get_active_alarms tool call not found"
           exit 1
         fi
         

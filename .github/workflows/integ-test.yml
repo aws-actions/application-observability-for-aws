@@ -45,17 +45,6 @@ jobs:
           mcp_config: ${{ steps.prepare.outputs.mcp_config_file }}
           allowed_tools: ${{ steps.prepare.outputs.allowed_tools }}
 
-      - name: Log Claude Execution Output
-        if: always()
-        shell: bash
-        run: |
-          echo "=== Claude Execution File Content ==="
-          if [[ -f "${{ steps.claude.outputs.execution_file }}" ]]; then
-            cat "${{ steps.claude.outputs.execution_file }}"
-          else
-            echo "Execution file not found: ${{ steps.claude.outputs.execution_file }}"
-          fi
-
       - name: Upload test outputs
         if: always()
         uses: actions/upload-artifact@v4
