@@ -216,7 +216,7 @@ class MCPConfigManager {
    * Check if CloudWatch MCP access is enabled and credentials are available
    */
   hasCloudWatchAccess() {
-    return false
+    return process.env.ENABLE_CLOUDWATCH_MCP === 'true' && this.hasAWSCredentials();
   }
 
   /**
