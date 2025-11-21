@@ -21,7 +21,7 @@ runs:
           exit 1
         fi
         
-        echo "Found execution file, checking for tool_use calls..."
+        echo "Checking for tool_use calls..."
         
         # Check for Application Signals MCP tool_use
         if jq -e '.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "mcp__applicationsignals__list_monitored_services")' "$EXECUTION_FILE" > /dev/null; then
