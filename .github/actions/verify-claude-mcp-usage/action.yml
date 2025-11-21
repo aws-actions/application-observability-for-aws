@@ -1,5 +1,5 @@
-name: "Verify MCP Usage"
-description: "Verifies that both CloudWatch and Application Signals MCP tools were called"
+name: "Verify Claude MCP Usage"
+description: "Verifies that Claude execution calls both CloudWatch and Application Signals MCP tools"
 
 inputs:
   execution_file:
