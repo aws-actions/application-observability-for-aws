@@ -2,34 +2,22 @@ name: "Verify MCP Usage"
 description: "Verifies that both CloudWatch and Application Signals MCP tools were called"
 
 inputs:
-  artifact_name:
-    description: "Name of the artifact containing test outputs"
+  execution_file:
+    description: "Path to Claude execution output JSON file"
     required: true
-  output_path:
-    description: "Path to download test outputs"
-    required: false
-    default: "./test-outputs"
 
 runs:
   using: "composite"
   steps:
-    - name: Download test outputs
-      uses: actions/download-artifact@v4
-      with:
-        name: ${{ inputs.artifact_name }}
-        path: ${{ inputs.output_path }}
-
     - name: Verify MCP tool usage
       shell: bash
       run: |
         echo "Checking for MCP tool usage..."
         
-        EXECUTION_FILE="${{ inputs.output_path }}/claude-execution-output.json"
+        EXECUTION_FILE="${{ inputs.execution_file }}"
         
         if [[ ! -f "$EXECUTION_FILE" ]]; then
           echo "ERROR: Execution file not found at $EXECUTION_FILE"
-          echo "Available files:"
-          find "${{ inputs.output_path }}" -type f | head -10
           exit 1
         fi
         

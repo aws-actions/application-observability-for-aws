@@ -13,6 +13,8 @@ env:
 jobs:
   awsapm-integ-test:
     runs-on: ubuntu-latest
+    outputs:
+      execution-file: ${{ steps.claude.outputs.execution_file }}
     permissions:
       contents: write
       pull-requests: write
@@ -45,16 +47,6 @@ jobs:
           mcp_config: ${{ steps.prepare.outputs.mcp_config_file }}
           allowed_tools: ${{ steps.prepare.outputs.allowed_tools }}
 
-      - name: Upload test outputs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-test-outputs
-          path: |
-            ${{ runner.temp }}/awsapm-prompts/
-            ${{ steps.claude.outputs.execution_file }}
-          retention-days: 7
-
   verify-mcp-usage:
     needs: awsapm-integ-test
     runs-on: ubuntu-latest
@@ -66,4 +58,4 @@ jobs:
       - name: Verify MCP tool usage
         uses: ./.github/actions/verify-mcp-usage
         with:
-          artifact_name: integration-test-outputs
+          execution_file: ${{ needs.awsapm-integ-test.outputs.execution-file }}
