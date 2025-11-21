@@ -5,136 +5,165 @@ const github = require('@actions/github');
 const fs = require('fs');
 
 /**
- * Update the GitHub comment with the final results from Application observability for AWS investigation
+ * Post Claude Code execution results back to GitHub issue/PR
+ * This is specifically for the Claude Code path when using claude-code-base-action
  */
 async function run() {
   try {
-    const context = github.context;
-
-    // Get environment variables
+    // Get inputs from environment
+    const commentId = process.env.AWSAPM_COMMENT_ID;
+    const executionFile = process.env.CLAUDE_EXECUTION_FILE;
     const githubToken = process.env.GITHUB_TOKEN;
     const repository = process.env.REPOSITORY;
-    const awsapmCommentId = process.env.AWSAPM_COMMENT_ID;
-    const githubRunId = process.env.GITHUB_RUN_ID;
-    const awsapmSuccess = process.env.AWSAPM_SUCCESS === 'true';
-    const outputFile = process.env.OUTPUT_FILE;
-    const triggerUsername = process.env.TRIGGER_USERNAME;
-    const initSuccess = process.env.INIT_SUCCESS === 'true';
-    // Always use sticky comment behavior (removed as config, now always enabled)
-    const useStickyComment = true;
-    const issueNumber = process.env.PR_NUMBER;
-    const isPR = process.env.IS_PR === 'true';
+    const conclusion = process.env.CLAUDE_CONCLUSION || 'unknown';
 
-    if (!githubToken) {
-      throw new Error('GitHub token is required');
+    if (!commentId) {
+      core.info('No comment ID provided - skipping result posting');
+      return;
     }
 
+    if (!executionFile || !fs.existsSync(executionFile)) {
+      core.warning(`Execution file not found: ${executionFile}`);
+
+      // Post error message to GitHub
+      const octokit = github.getOctokit(githubToken);
+      const [owner, repo] = repository.split('/');
+
+      await octokit.rest.issues.updateComment({
+        owner,
+        repo,
+        comment_id: commentId,
+        body: `❌ **Investigation Failed**\n\nClaude Code execution file not found. Check the [workflow logs](${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}) for details.`
+      });
+      return;
+    }
+
+    // Read Claude Code execution log
+    core.info(`Reading Claude execution results from: ${executionFile}`);
+    const executionLogContent = fs.readFileSync(executionFile, 'utf8');
+
+    core.info(`Total file length: ${executionLogContent.length} characters`);
+
+    // Parse the execution log (JSON format from claude-code-base-action)
+    let result = '';
+    try {
+      // Try to parse as JSON array first (claude-code-base-action format)
+      const parsedArray = JSON.parse(executionLogContent);
+
+      if (Array.isArray(parsedArray)) {
+        core.info(`Parsed execution file as JSON array with ${parsedArray.length} items`);
+
+        // Look for the result object (type: "result")
+        for (const item of parsedArray) {
+          if (item.type === 'result' && item.result) {
+            result = item.result;
+            core.info(`Found result in type="result" object`);
+            break;
+          }
+
+          // Fallback: extract from assistant message
+          if (item.type === 'assistant' && item.message && item.message.content) {
+            for (const content of item.message.content) {
+              if (content.type === 'text' && content.text) {
+                result = content.text;
+                core.info(`Found result in type="assistant" message`);
+              }
+            }
+          }
+        }
+      } else {
+        core.warning('Execution file is not a JSON array, trying line-by-line parsing');
+        throw new Error('Not a JSON array');
+      }
+    } catch (parseError) {
+      core.info(`JSON array parsing failed, trying line-by-line: ${parseError.message}`);
+
+      // Fallback: try line-by-line parsing for older format
+      try {
+        const lines = executionLogContent.split('\n').filter(line => line.trim());
+        let lastAssistantMessage = '';
+
+        core.info(`Processing ${lines.length} lines from execution log`);
+
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+
+            if (parsed.type === 'assistant' && parsed.message && parsed.message.content) {
+              let currentMessage = '';
+              for (const content of parsed.message.content) {
+                if (content.type === 'text' && content.text) {
+                  currentMessage += content.text;
+                }
+              }
+              if (currentMessage.trim()) {
+                lastAssistantMessage = currentMessage;
+              }
+            }
+
+            if (parsed.type === 'result' && parsed.result) {
+              result += parsed.result;
+            }
+          } catch (e) {
+            // Skip non-JSON lines
+          }
+        }
+
+        result = result || lastAssistantMessage;
+      } catch (lineParseError) {
+        core.error(`Failed to parse execution log: ${lineParseError.message}`);
+        result = '⚠️ Investigation completed but no result was generated. Check the workflow logs for details.'; // Fallback to default error msg
+      }
+    }
+
+    if (!result || result.trim().length === 0) {
+      result = '⚠️ Investigation completed but no result was generated. Check the workflow logs for details.';
+    }
+
+    // Ensure result starts with the required marker
+    const resultMarker = '🎯 **Application observability for AWS Investigation Result**';
+    if (!result.trim().startsWith(resultMarker)) {
+      core.info('Result does not start with required marker, adding it');
+      result = `${resultMarker}\n\n${result}`;
+    }
+
+    // Debug: Log what we're posting
+    core.debug(`Result length: ${result.length} characters`);
+    core.debug(`First 500 chars of result: ${result.substring(0, 500)}`);
+
+    // Post result to GitHub
     const octokit = github.getOctokit(githubToken);
     const [owner, repo] = repository.split('/');
 
-    let responseContent = '';
+    // Get trigger username from environment
+    const triggerUsername = process.env.TRIGGER_USERNAME || 'unknown';
 
-    if (awsapmSuccess && outputFile && fs.existsSync(outputFile)) {
-      // Read the AI response from the output file
-      responseContent = fs.readFileSync(outputFile, 'utf8');
-    } else {
-      responseContent = '❌ **Investigation Failed**\n\nThe Application observability for AWS investigation could not be completed. Please check the workflow logs for more details.';
-    }
+    // Build status footer
+    const statusEmoji = conclusion === 'success' ? '✅' : '⚠️';
+    const statusText = conclusion === 'success' ? 'Complete' : 'Failed';
+    const workflowUrl = `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`;
 
-    // Create the final comment body
-    const workflowUrl = `${context.payload.repository.html_url}/actions/runs/${githubRunId}`;
+    const footer = `\n\n---\n\n${statusEmoji} **Status:** ${statusText}\n👤 **Requested by:** @${triggerUsername}\n🔗 **Workflow:** [View details](${workflowUrl})`;
 
-    let commentBody;
-    if (awsapmSuccess) {
-      commentBody = `🎯 **Application observability for AWS Investigation Complete**\n\n` +
-        `Investigation completed successfully! Here are the results:\n\n` +
-        `---\n\n` +
-        `${responseContent}\n\n` +
-        `---\n\n` +
-        `✅ **Status**: Complete\n` +
-        `👤 **Requested by**: @${triggerUsername}\n` +
-        `🔗 **Workflow**: [View details](${workflowUrl})`;
-    } else {
-      commentBody = `❌ **Application observability for AWS Investigation Failed**\n\n` +
-        `The investigation could not be completed. Please check the workflow logs for more details.\n\n` +
-        `👤 **Requested by**: @${triggerUsername}\n` +
-        `🔗 **Workflow**: [View details](${workflowUrl})\n\n` +
-        `*If this issue persists, please check your action configuration and try again.*`;
-    }
+    const commentBody = `${statusEmoji} ${result}${footer}`;
 
-    // Update or create comment
-    if (awsapmCommentId && useStickyComment) {
-      // Update existing comment
-      try {
-        await octokit.rest.issues.updateComment({
-          owner,
-          repo,
-          comment_id: parseInt(awsapmCommentId),
-          body: commentBody,
-        });
-      } catch (error) {
-        core.error(`Failed to update existing comment: ${error.message}`);
-        // Fall back to creating a new comment
-        await createNewComment(octokit, owner, repo, issueNumber, commentBody);
-      }
-    } else {
-      // Create new comment
-      await createNewComment(octokit, owner, repo, issueNumber, commentBody);
-    }
+    core.info(`Updating comment ${commentId} in ${owner}/${repo}`);
+    core.info(`Comment body length: ${commentBody.length} characters`);
+
+    const response = await octokit.rest.issues.updateComment({
+      owner,
+      repo,
+      comment_id: commentId,
+      body: commentBody
+    });
+
+    core.info(`Successfully posted Claude results to GitHub (comment URL: ${response.data.html_url})`);
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    core.error(`Comment update failed: ${errorMessage}`);
-
-    // Try to post an error comment if possible
-    try {
-      const githubToken = process.env.GITHUB_TOKEN;
-      const repository = process.env.REPOSITORY;
-      const issueNumber = process.env.PR_NUMBER;
-
-      if (githubToken && repository && issueNumber) {
-        const octokit = github.getOctokit(githubToken);
-        const [owner, repo] = repository.split('/');
-
-        const errorCommentBody = `❌ **Application observability for AWS Action Error**\n\n` +
-          `Failed to complete the investigation due to an internal error.\n\n` +
-          `Error: \`${errorMessage}\`\n\n` +
-          `Please check the [workflow logs](${context.payload.repository.html_url}/actions/runs/${process.env.GITHUB_RUN_ID}) for more details.`;
-
-        await octokit.rest.issues.createComment({
-          owner,
-          repo,
-          issue_number: parseInt(issueNumber),
-          body: errorCommentBody,
-        });
-      }
-    } catch (errorCommentError) {
-      core.error(`Failed to post error comment: ${errorCommentError.message}`);
-    }
-
-    core.setFailed(`Comment update failed with error: ${errorMessage}`);
+    core.error(`Failed to post Claude results: ${errorMessage}`);
+    core.setFailed(`Failed to post Claude results: ${errorMessage}`);
     process.exit(1);
-  }
-}
-
-/**
- * Create a new comment on the issue/PR
- */
-async function createNewComment(octokit, owner, repo, issueNumber, commentBody) {
-  if (!issueNumber) {
-    return;
-  }
-
-  try {
-    await octokit.rest.issues.createComment({
-      owner,
-      repo,
-      issue_number: parseInt(issueNumber),
-      body: commentBody,
-    });
-  } catch (error) {
-    core.error(`Failed to create new comment: ${error.message}`);
-    throw error;
   }
 }
 

@@ -1,5 +1,5 @@
-name: "Application Observability for AWS Action"
-description: "This curated Application Observability Github action provides Agentic AI driven investigation and resolution, using live production telemetry data."
+name: "Application observability for AWS"
+description: "Support Agentic AI–driven performance investigation and resolution using live production telemetry."
 branding:
   icon: "cloud"
   color: "orange"
@@ -28,6 +28,19 @@ inputs:
     description: "Custom instructions to guide the AI agent's analysis and actions"
     required: false
     default: ""
+  cli_tool:
+    description: "CLI tool to use for investigation"
+    required: false
+    default: "claude_code"
+  output_file:
+    description: "Path to AI agent execution output file (used to post results back to GitHub). For claude_code path, pass this from claude-code-base-action outputs in a second call to this action."
+    required: false
+  output_status:
+    description: "Execution status from AI agent (success or failure). Only used when output_file is provided."
+    required: false
+  comment_id:
+    description: "GitHub comment ID to update with results (required for Step 3 - pass from Step 1 output: steps.prepare.outputs.awsapm_comment_id)"
+    required: false
   enable_cloudwatch_mcp:
     description: "Enable CloudWatch MCP server for metrics, alarms, and log insights"
     required: false
@@ -38,9 +51,21 @@ inputs:
     default: "false"
 
 outputs:
-  execution_file:
-    description: "Path to the Amazon Q Developer CLI execution output file"
-    value: ${{ steps.aws-apm-cli.outputs.execution_file }}
+  # Preparation outputs for claude-code-base-action
+  prompt_file:
+    description: "Path to the generated prompt file for claude-code-base-action"
+    value: ${{ steps.prepare-claude.outputs.prompt_file }}
+  mcp_config_file:
+    description: "Path to the MCP servers configuration JSON file"
+    value: ${{ steps.prepare-claude.outputs.mcp_config_file }}
+  allowed_tools:
+    description: "Comma-separated list of allowed tools"
+    value: ${{ steps.prepare-claude.outputs.allowed_tools }}
+
+  # Common outputs
+  awsapm_comment_id:
+    description: "GitHub comment ID for tracking the investigation"
+    value: ${{ steps.init.outputs.awsapm_comment_id }}
   branch_name:
     description: "The branch created by Application observability for AWS Action for this execution"
     value: ${{ steps.init.outputs.AWSAPM_BRANCH }}
@@ -73,6 +98,7 @@ runs:
 
     - name: Init action
       id: init
+      if: inputs.output_file == ''  # Skip init when posting results
       shell: bash
       run: |
         node ${GITHUB_ACTION_PATH}/src/init.js
@@ -87,8 +113,35 @@ runs:
         DEFAULT_WORKFLOW_TOKEN: ${{ github.token }}
         TEST_MODE: ${{ inputs.test_mode }}
 
-    - name: Install CLI Tools
-      if: steps.init.outputs.contains_trigger == 'true'
+    # Validate CLI tool input
+    - name: Validate CLI Tool
+      id: validate-cli
+      if: inputs.output_file == '' && inputs.cli_tool != 'claude_code'
+      continue-on-error: true
+      shell: bash
+      run: |
+        # Create error output file
+        mkdir -p ${{ runner.temp }}/awsapm-output
+        ERROR_FILE="${{ runner.temp }}/awsapm-output/validation-error.txt"
+
+        cat > "$ERROR_FILE" << 'EOF'
+        ❌ **Invalid CLI Tool**
+
+        The CLI tool `${{ inputs.cli_tool }}` is not supported.
+
+        **Supported tools:**
+        - `claude_code` (default)
+
+        Please update your workflow configuration to use `cli_tool: "claude_code"` or remove the `cli_tool` input to use the default.
+        EOF
+
+        echo "validation_error_file=$ERROR_FILE" >> $GITHUB_OUTPUT
+        echo "::error::Unsupported cli_tool: ${{ inputs.cli_tool }}. Only 'claude_code' is supported."
+        exit 1  # Fail the step but continue workflow to post error
+
+    # Install MCP Tools for claude-code-base-action
+    - name: Install MCP Tools
+      if: steps.init.outputs.contains_trigger == 'true' && steps.validate-cli.outcome == 'skipped'
       shell: bash
       run: |
         set -e  # Exit immediately if any command fails
@@ -100,58 +153,48 @@ runs:
 
         # Verify uvx installation
         if ! command -v uvx &> /dev/null; then
-          echo "::error::uvx installation failed - Amazon Q MCP tools will not work"
+          echo "::error::uvx installation failed - MCP tools can not work"
           exit 1
         fi
         echo "uvx installed successfully"
         uvx --version
 
-        # Install Amazon Q Developer CLI
-        echo "Installing Amazon Q Developer CLI..."
-        sudo apt-get update
-        curl -L -o amazon-q.deb https://desktop-release.q.us-east-1.amazonaws.com/1.19.4/amazon-q.deb
-        sudo apt-get install -y --fix-missing ./amazon-q.deb || sudo apt-get install -y -f
-
-        # Verify Amazon Q CLI installation
-        if ! command -v q &> /dev/null; then
-          echo "::error::Amazon Q CLI installation failed - q command not found in PATH"
-          exit 1
-        fi
-        echo "Amazon Q CLI installed successfully"
-        q --version
-        
-
-    - name: Run Application observability for AWS Investigation
-      id: aws-apm-cli
-      if: steps.init.outputs.contains_trigger == 'true'
+    - name: Prepare Claude Configuration
+      id: prepare-claude
+      if: steps.init.outputs.contains_trigger == 'true' && steps.validate-cli.outcome == 'skipped'
       shell: bash
       run: |
         cd ${GITHUB_ACTION_PATH}
-        node src/execute.js
+        node src/prepare-claude-config.js
       env:
         GITHUB_TOKEN: ${{ steps.init.outputs.GITHUB_TOKEN }}
         ENABLE_CLOUDWATCH_MCP: ${{ inputs.enable_cloudwatch_mcp }}
         INPUT_PROMPT_FILE: ${{ runner.temp }}/awsapm-prompts/awsapm-prompt.txt
-        TEST_MODE: ${{ inputs.test_mode }}
+        OUTPUT_DIR: ${{ runner.temp }}/awsapm-prompts
 
-    - name: Update comment with results
-      if: steps.init.outputs.contains_trigger == 'true' && steps.init.outputs.awsapm_comment_id && always()
+    # Post results (when output_file is provided OR validation failed)
+    - name: Post Investigation Results
+      if: |
+        inputs.output_file != '' ||
+        (steps.validate-cli.outcome == 'failure' && steps.init.outputs.awsapm_comment_id != '')
       shell: bash
       run: |
         cd ${GITHUB_ACTION_PATH}
         node src/post-result.js
       env:
+        AWSAPM_COMMENT_ID: ${{ inputs.comment_id || steps.init.outputs.awsapm_comment_id }}
+        CLAUDE_EXECUTION_FILE: ${{ steps.validate-cli.outputs.validation_error_file || inputs.output_file }}
+        CLAUDE_CONCLUSION: ${{ steps.validate-cli.outcome == 'failure' && 'failure' || inputs.output_status }}
+        GITHUB_TOKEN: ${{ steps.init.outputs.GITHUB_TOKEN || inputs.github_token }}
         REPOSITORY: ${{ github.repository }}
-        PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-        AWSAPM_COMMENT_ID: ${{ steps.init.outputs.awsapm_comment_id }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
         GITHUB_RUN_ID: ${{ github.run_id }}
-        GITHUB_TOKEN: ${{ steps.init.outputs.GITHUB_TOKEN }}
-        GITHUB_EVENT_NAME: ${{ github.event_name }}
-        TRIGGER_COMMENT_ID: ${{ github.event.comment.id }}
-        AWSAPM_BRANCH: ${{ steps.init.outputs.AWSAPM_BRANCH }}
-        IS_PR: ${{ github.event.issue.pull_request != null || github.event_name == 'pull_request_review_comment' }}
-        TARGET_BRANCH: ${{ steps.init.outputs.TARGET_BRANCH }}
-        AWSAPM_SUCCESS: ${{ steps.aws-apm-cli.outputs.conclusion == 'success' }}
-        OUTPUT_FILE: ${{ steps.aws-apm-cli.outputs.execution_file || '' }}
-        TRIGGER_USERNAME: ${{ github.event.comment.user.login || github.event.issue.user.login || github.event.pull_request.user.login || github.event.sender.login || github.triggering_actor || github.actor || '' }}
-        INIT_SUCCESS: ${{ steps.init.outcome == 'success' }}
+        TRIGGER_USERNAME: ${{ github.event.comment.user.login || github.event.issue.user.login || github.event.pull_request.user.login || github.event.sender.login || github.triggering_actor || github.actor || 'unknown' }}
+
+    # Fail the workflow if validation failed (after posting error to GitHub)
+    - name: Fail Workflow on Validation Error
+      if: steps.validate-cli.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::error::Workflow stopped due to validation error. See the posted comment for details."
+        exit 1

@@ -23,11 +23,11 @@ async function run() {
     const testMode = process.env.TEST_MODE || 'false';
 
     // Function to check for bot name trigger phrase
-    // Note: Phrases like "@awsapm-user" will be also considered valid.
-    // Keeping this logic simple by accepting such variations.
+    // Must contain "@awsapm" prefix (case-insensitive)
+    // Note: Phrases like "@awsapm-prod", "@awsapm-staging" are also valid.
     function containsTriggerPhrase(text) {
       if (!text) return false;
-      return text.toLowerCase().includes(botName.toLowerCase());
+      return text.toLowerCase().includes('@awsapm');
     }
 
     // Check if trigger phrase is present in the event
@@ -179,7 +179,7 @@ async function run() {
             awsapmCommentId = existingComment.id;
 
             // Update it to show re-investigating status
-            const reinvestigateBody = `🔄 **Re-investigating...**\n\n` +
+            const reinvestigateBody = `🔄 **Application observability for AWS Investigation Re-investigating...**\n\n` +
               `Request updated by @${triggerUsername}.\n\n` +
               `Updated request:\n> ${triggerText.substring(0, 300)}${triggerText.length > 300 ? '...' : ''}\n\n` +
               `⏳ Investigation in progress - [View workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})`;

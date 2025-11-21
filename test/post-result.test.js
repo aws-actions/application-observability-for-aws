@@ -1,287 +1,251 @@
-const { run } = require('../src/post-result');
-const fs = require('fs');
-const path = require('path');
+#!/usr/bin/env node
 
-// Mock process.exit
-const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {});
-
-// Mock @actions/core
-jest.mock('@actions/core', () => ({
-  info: jest.fn(),
-  debug: jest.fn(),
-  error: jest.fn(),
-  warning: jest.fn(),
-  setFailed: jest.fn(),
-}));
-
-// Mock @actions/github
-const mockOctokit = {
-  rest: {
-    issues: {
-      createComment: jest.fn(),
-      updateComment: jest.fn(),
+// Mock modules BEFORE requiring them
+jest.mock('@actions/core');
+jest.mock('@actions/github');
+jest.mock('fs', () => {
+  const actualFs = jest.requireActual('fs');
+  return {
+    ...actualFs,
+    existsSync: jest.fn(),
+    readFileSync: jest.fn(),
+    promises: {
+      access: jest.fn(),
+      appendFile: jest.fn(),
+      writeFile: jest.fn(),
     },
-  },
-};
-
-jest.mock('@actions/github', () => ({
-  context: {
-    payload: {
-      repository: {
-        html_url: 'https://github.com/test-owner/test-repo'
-      }
-    }
-  },
-  getOctokit: jest.fn(() => mockOctokit)
-}));
+  };
+});
 
 const core = require('@actions/core');
+const github = require('@actions/github');
+const fs = require('fs');
+
+const { run } = require('../src/post-result.js');
 
 describe('post-result', () => {
   let originalEnv;
-  let tempDir;
-  let outputFile;
+  const mockUpdateComment = jest.fn();
 
   beforeEach(() => {
+    // Save original env
     originalEnv = { ...process.env };
+
+    // Reset mocks
     jest.clearAllMocks();
-    mockExit.mockClear();
 
-    // Create temp directory and output file
-    tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'post-result-test-'));
-    outputFile = path.join(tempDir, 'output.txt');
-    fs.writeFileSync(outputFile, 'Test analysis result');
+    // Setup default mocks
+    github.getOctokit.mockReturnValue({
+      rest: {
+        issues: {
+          updateComment: mockUpdateComment,
+        },
+      },
+    });
 
-    // Set up environment
-    process.env.GITHUB_TOKEN = 'test-token';
-    process.env.REPOSITORY = 'test-owner/test-repo';
-    process.env.PR_NUMBER = '1';
-    process.env.GITHUB_RUN_ID = '123456';
-    process.env.AWSAPM_SUCCESS = 'true';
-    process.env.OUTPUT_FILE = outputFile;
-    process.env.TRIGGER_USERNAME = 'test-user';
-    process.env.PREPARE_SUCCESS = 'true';
-    process.env.IS_PR = 'true';
+    mockUpdateComment.mockResolvedValue({
+      data: { html_url: 'https://github.com/owner/repo/issues/1#issuecomment-123' }
+    });
   });
 
   afterEach(() => {
+    // Restore original env
     process.env = originalEnv;
-
-    // Cleanup temp files
-    if (fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    }
   });
 
-  describe('update existing comment', () => {
-    test('updates comment with output content', async () => {
-      process.env.AWSAPM_COMMENT_ID = '456';
-      mockOctokit.rest.issues.updateComment.mockResolvedValue({});
+  describe('when no comment ID is provided', () => {
+    it('should skip result posting', async () => {
+      process.env.AWSAPM_COMMENT_ID = '';
 
       await run();
 
-      expect(mockOctokit.rest.issues.updateComment).toHaveBeenCalledWith(
+      expect(core.info).toHaveBeenCalledWith('No comment ID provided - skipping result posting');
+      expect(mockUpdateComment).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('when execution file does not exist', () => {
+    it('should post error message to GitHub', async () => {
+      process.env.AWSAPM_COMMENT_ID = '12345';
+      process.env.CLAUDE_EXECUTION_FILE = '/tmp/nonexistent.json';
+      process.env.GITHUB_TOKEN = 'token';
+      process.env.REPOSITORY = 'owner/repo';
+      process.env.GITHUB_SERVER_URL = 'https://github.com';
+      process.env.GITHUB_RUN_ID = '123';
+
+      fs.existsSync.mockReturnValue(false);
+
+      await run();
+
+      expect(core.warning).toHaveBeenCalledWith(
+        expect.stringContaining('Execution file not found')
+      );
+      expect(mockUpdateComment).toHaveBeenCalledWith({
+        owner: 'owner',
+        repo: 'repo',
+        comment_id: '12345',
+        body: expect.stringContaining('Investigation Failed'),
+      });
+    });
+  });
+
+  describe('when execution file is valid JSON array', () => {
+    it('should parse result from type="result" object', async () => {
+      process.env.AWSAPM_COMMENT_ID = '12345';
+      process.env.CLAUDE_EXECUTION_FILE = '/tmp/output.json';
+      process.env.CLAUDE_CONCLUSION = 'success';
+      process.env.GITHUB_TOKEN = 'token';
+      process.env.REPOSITORY = 'owner/repo';
+      process.env.GITHUB_SERVER_URL = 'https://github.com';
+      process.env.GITHUB_RUN_ID = '123';
+      process.env.TRIGGER_USERNAME = 'testuser';
+
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue(JSON.stringify([
+        { type: 'result', result: 'Test investigation result' }
+      ]));
+
+      await run();
+
+      expect(mockUpdateComment).toHaveBeenCalledTimes(1);
+      expect(mockUpdateComment).toHaveBeenCalledWith(
         expect.objectContaining({
-          comment_id: 456,
-          owner: 'test-owner',
-          repo: 'test-repo'
+          owner: 'owner',
+          repo: 'repo',
+          comment_id: '12345',
         })
       );
 
-      const call = mockOctokit.rest.issues.updateComment.mock.calls[0];
-      expect(call[0].body).toContain('Test analysis result');
+      const callArgs = mockUpdateComment.mock.calls[0][0];
+      expect(callArgs.body).toContain('Test investigation result');
+      expect(callArgs.body).toContain('✅');
+      expect(callArgs.body).toContain('**Status:** Complete');
+      expect(callArgs.body).toContain('**Requested by:** @testuser');
     });
 
-    test('falls back to create comment on update error', async () => {
-      process.env.AWSAPM_COMMENT_ID = '456';
-      mockOctokit.rest.issues.updateComment.mockRejectedValue(new Error('Update failed'));
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
+    it('should parse result from assistant message', async () => {
+      process.env.AWSAPM_COMMENT_ID = '12345';
+      process.env.CLAUDE_EXECUTION_FILE = '/tmp/output.json';
+      process.env.CLAUDE_CONCLUSION = 'failure';
+      process.env.GITHUB_TOKEN = 'token';
+      process.env.REPOSITORY = 'owner/repo';
+      process.env.GITHUB_SERVER_URL = 'https://github.com';
+      process.env.GITHUB_RUN_ID = '123';
+      process.env.TRIGGER_USERNAME = 'testuser';
+
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue(JSON.stringify([
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'Assistant message result' }
+            ]
+          }
+        }
+      ]));
 
       await run();
 
-      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
-    });
-  });
-
-  describe('create new comment', () => {
-    test('creates comment with output content', async () => {
-      delete process.env.AWSAPM_COMMENT_ID;
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(
+      expect(mockUpdateComment).toHaveBeenCalledTimes(1);
+      expect(mockUpdateComment).toHaveBeenCalledWith(
         expect.objectContaining({
-          owner: 'test-owner',
-          repo: 'test-repo',
-          issue_number: 1
+          owner: 'owner',
+          repo: 'repo',
+          comment_id: '12345',
         })
       );
 
-      const call = mockOctokit.rest.issues.createComment.mock.calls[0];
-      expect(call[0].body).toContain('Test analysis result');
+      const callArgs = mockUpdateComment.mock.calls[0][0];
+      expect(callArgs.body).toContain('Assistant message result');
+      expect(callArgs.body).toContain('⚠️');
+      expect(callArgs.body).toContain('**Status:** Failed');
     });
   });
 
-  describe('comment content', () => {
-    test('includes success header', async () => {
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
+  describe('when execution file is line-by-line JSON', () => {
+    it('should parse result from newline-delimited format', async () => {
+      process.env.AWSAPM_COMMENT_ID = '12345';
+      process.env.CLAUDE_EXECUTION_FILE = '/tmp/output.json';
+      process.env.CLAUDE_CONCLUSION = 'success';
+      process.env.GITHUB_TOKEN = 'token';
+      process.env.REPOSITORY = 'owner/repo';
+      process.env.GITHUB_SERVER_URL = 'https://github.com';
+      process.env.GITHUB_RUN_ID = '123';
+      process.env.TRIGGER_USERNAME = 'testuser';
+
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue(
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"Line 1"}]}}\n' +
+        '{"type":"result","result":"Final result"}\n'
+      );
 
       await run();
 
-      const call = mockOctokit.rest.issues.createComment.mock.calls[0];
-      expect(call[0].body).toContain('🎯 **Application observability for AWS Investigation Complete**');
-    });
-
-    test('includes workflow link', async () => {
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      const call = mockOctokit.rest.issues.createComment.mock.calls[0];
-      expect(call[0].body).toContain('https://github.com/test-owner/test-repo/actions/runs/123456');
-    });
-
-    test('includes requester username', async () => {
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      const call = mockOctokit.rest.issues.createComment.mock.calls[0];
-      expect(call[0].body).toContain('@test-user');
-    });
-
-    test('includes status indicator', async () => {
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      const call = mockOctokit.rest.issues.createComment.mock.calls[0];
-      expect(call[0].body).toContain('✅ **Status**: Complete');
-    });
-
-    test('separates content with horizontal rules', async () => {
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      const call = mockOctokit.rest.issues.createComment.mock.calls[0];
-      expect(call[0].body).toContain('---');
+      expect(mockUpdateComment).toHaveBeenCalledWith({
+        owner: 'owner',
+        repo: 'repo',
+        comment_id: '12345',
+        body: expect.stringContaining('Final result'),
+      });
     });
   });
 
-  describe('failure handling', () => {
-    test('posts failure message when execution failed', async () => {
-      process.env.AWSAPM_SUCCESS = 'false';
-      delete process.env.OUTPUT_FILE;
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
+  describe('when execution file has no result', () => {
+    it('should post warning message', async () => {
+      process.env.AWSAPM_COMMENT_ID = '12345';
+      process.env.CLAUDE_EXECUTION_FILE = '/tmp/output.json';
+      process.env.CLAUDE_CONCLUSION = 'success';
+      process.env.GITHUB_TOKEN = 'token';
+      process.env.REPOSITORY = 'owner/repo';
+      process.env.GITHUB_SERVER_URL = 'https://github.com';
+      process.env.GITHUB_RUN_ID = '123';
+      process.env.TRIGGER_USERNAME = 'testuser';
+
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue(JSON.stringify([]));
 
       await run();
 
-      const call = mockOctokit.rest.issues.createComment.mock.calls[0];
-      expect(call[0].body).toContain('❌ **Application observability for AWS Investigation Failed**');
-    });
-
-    test('posts failure message when output file missing', async () => {
-      process.env.AWSAPM_SUCCESS = 'true';
-      process.env.OUTPUT_FILE = '/nonexistent/file.txt';
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      const call = mockOctokit.rest.issues.createComment.mock.calls[0];
-      expect(call[0].body).toContain('❌ **Investigation Failed**');
-    });
-
-    test('includes workflow link in failure message', async () => {
-      process.env.AWSAPM_SUCCESS = 'false';
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      const call = mockOctokit.rest.issues.createComment.mock.calls[0];
-      expect(call[0].body).toContain('https://github.com/test-owner/test-repo/actions/runs/123456');
+      expect(mockUpdateComment).toHaveBeenCalledWith({
+        owner: 'owner',
+        repo: 'repo',
+        comment_id: '12345',
+        body: expect.stringContaining('Investigation completed but no result was generated'),
+      });
     });
   });
 
   describe('error handling', () => {
-    test('logs error when token missing', async () => {
-      delete process.env.GITHUB_TOKEN;
+    it('should handle GitHub API errors', async () => {
+      process.env.AWSAPM_COMMENT_ID = '12345';
+      process.env.CLAUDE_EXECUTION_FILE = '/tmp/output.json';
+      process.env.CLAUDE_CONCLUSION = 'success';
+      process.env.GITHUB_TOKEN = 'token';
+      process.env.REPOSITORY = 'owner/repo';
+      process.env.GITHUB_SERVER_URL = 'https://github.com';
+      process.env.GITHUB_RUN_ID = '123';
 
-      await run();
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue(JSON.stringify([
+        { type: 'result', result: 'Test result' }
+      ]));
+      mockUpdateComment.mockRejectedValue(new Error('API Error'));
 
-      expect(core.error).toHaveBeenCalled();
-      expect(core.setFailed).toHaveBeenCalled();
-    });
-
-    test('logs error when comment creation fails', async () => {
-      mockOctokit.rest.issues.createComment.mockRejectedValue(new Error('API error'));
-
-      await run();
-
-      expect(core.error).toHaveBeenCalledWith(expect.stringContaining('Comment update failed'));
-    });
-
-    test('exits with error code on failure', async () => {
+      // Mock process.exit to prevent actual exit
       const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {});
-      delete process.env.GITHUB_TOKEN;
 
       await run();
 
+      expect(core.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to post Claude results: API Error')
+      );
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to post Claude results: API Error')
+      );
       expect(mockExit).toHaveBeenCalledWith(1);
+
       mockExit.mockRestore();
-    });
-  });
-
-  describe('repository parsing', () => {
-    test('parses repository owner and name', async () => {
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(
-        expect.objectContaining({
-          owner: 'test-owner',
-          repo: 'test-repo'
-        })
-      );
-    });
-
-    test('handles different repository formats', async () => {
-      process.env.REPOSITORY = 'my-org/my-repo';
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(
-        expect.objectContaining({
-          owner: 'my-org',
-          repo: 'my-repo'
-        })
-      );
-    });
-  });
-
-  describe('issue number', () => {
-    test('uses PR_NUMBER from environment', async () => {
-      process.env.PR_NUMBER = '42';
-      mockOctokit.rest.issues.createComment.mockResolvedValue({});
-
-      await run();
-
-      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(
-        expect.objectContaining({
-          issue_number: 42
-        })
-      );
-    });
-
-    test('skips comment when no issue number', async () => {
-      delete process.env.PR_NUMBER;
-
-      await run();
-
-      expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
     });
   });
 });
