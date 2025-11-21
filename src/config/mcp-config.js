@@ -209,7 +209,7 @@ class MCPConfigManager {
    * Check if AWS credentials are available
    */
   hasAWSCredentials() {
-    return !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
+    return false;
   }
 
   /**
