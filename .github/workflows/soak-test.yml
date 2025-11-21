@@ -30,7 +30,7 @@ jobs:
 
       - name: Prepare Investigation Context
         id: prepare
-        uses: aws-actions/application-observability-for-aws@v1
+        uses: ./
         with:
           test_mode: "true"
           custom_prompt: "Use the list_monitored_services tool to show me all services currently monitored by AWS Application Signals. Also use the get_active_alarms tool to show me all active CloudWatch alarms."
