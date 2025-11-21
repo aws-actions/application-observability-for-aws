@@ -3,6 +3,9 @@ name: Soak Test
 on:
   schedule:
     - cron: '0 * * * *'  # every hour
+  push:
+    branches:
+      - integ-test
 
 env:
   AWS_DEFAULT_REGION: us-east-1
@@ -25,22 +28,30 @@ jobs:
           role-to-assume: ${{ secrets.AWSAPM_ROLE_ARN }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
-      - name: Run Application Observability for AWS Investigation - Soak Test
-        # TODO: Change to use published action once v1 is released
-        # uses: aws-actions/application-observability-for-aws@v1
-        uses: ./
+      - name: Prepare Investigation Context
+        id: prepare
+        uses: aws-actions/application-observability-for-aws@v1
         with:
           test_mode: "true"
           custom_prompt: "Use the list_monitored_services tool to show me all services currently monitored by AWS Application Signals. Also use the get_active_alarms tool to show me all active CloudWatch alarms."
 
-      - name: Upload test outputs
+      - name: Run Claude Investigation
+        id: claude
+        uses: anthropics/claude-code-base-action@beta
+        with:
+          use_bedrock: "true" 
+          model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+          prompt_file: ${{ steps.prepare.outputs.prompt_file }}
+          mcp_config: ${{ steps.prepare.outputs.mcp_config_file }}
+          allowed_tools: ${{ steps.prepare.outputs.allowed_tools }}
+
+      - name: Upload Claude execution output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: soak-test-outputs
-          path: |
-            ${{ runner.temp }}/awsapm-output/
-          retention-days: 7
+          name: claude-execution-output
+          path: ${{ steps.claude.outputs.execution_file }}
+          retention-days: 1
 
   verify-mcp-usage:
     needs: awsapm-soak-test
@@ -50,10 +61,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         
+      - name: Download and verify
+        uses: actions/download-artifact@v4
+        with:
+          name: claude-execution-output
+          path: ./
+        
       - name: Verify MCP tool usage
         uses: ./.github/actions/verify-mcp-usage
         with:
-          artifact_name: soak-test-outputs
+          execution_file: ./claude-execution-output.json
 
   publish-metric:
     needs: [awsapm-soak-test, verify-mcp-usage]
