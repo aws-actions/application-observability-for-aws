@@ -2,7 +2,7 @@
 
 This action provides an end-to-end application observability investigation workflow that connects your source code and live production telemetry data to AI agent. It leverages CloudWatch MCPs and generates custom prompts to provide the context that AI agents need for troubleshooting and applying code fixes.
 
-The action sets up and configures [AWS Application Signals MCP](https://github.com/awslabs/mcp/tree/main/src/cloudwatch-appsignals-mcp-server) and [AWS CloudWatch MCP](https://github.com/awslabs/mcp/tree/main/src/cloudwatch-mcp-server), enabling them to access live telemetry data as troubleshooting context. You can use your preferred AI model - whether through your own API key, a third-party model, or Amazon Bedrock - for application performance investigations.
+The action sets up and configures [CloudWatch Application Signals MCP Server](https://awslabs.github.io/mcp/servers/cloudwatch-applicationsignals-mcp-server) and [CloudWatch MCP Server](https://awslabs.github.io/mcp/servers/cloudwatch-mcp-server), enabling them to access live telemetry data as troubleshooting context. You can use your preferred AI model - whether through your own API key, a third-party model, or Amazon Bedrock - for application performance investigations.
 
 To get started, mention `@awsapm` in your GitHub issues to trigger the AI agent. The agent will troubleshoot production issues, implement fixes, and enhance observability coverage based on your live application data.
 
@@ -15,7 +15,7 @@ With a one-time setup of Application observability for AWS Action workflow for y
 3. **AI-Powered Analysis**: Use AI agents to analyze performance issues, receive actionable recommendations, and apply code fixes
 
 ## 🚀 Getting Started
-This action configures AI agents within your GitHub workflow by generating AWS-specific MCP configurations and custom observability prompts. You only need to provide IAM role to assume and a [Bedrock Model ID](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html) you want to use, or API token from your existing LLM subscription. The example below demonstrates a workflow template that integrates this action with [Anthropic's claude-code-base-action](https://github.com/anthropics/claude-code-action) to run automated investigations.
+This action configures AI agents within your GitHub workflow by generating AWS-specific MCP configurations and custom observability prompts. You only need to provide IAM role to assume and a [Bedrock Model ID](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html) you want to use, or API token from your existing LLM subscription. The example below demonstrates a workflow template that integrates this action with [Anthropic's claude-code-base-action](https://github.com/anthropics/claude-code-base-action) to run automated investigations.
 
 ### Prerequisites
 Before you begin, ensure you have the following:
@@ -31,18 +31,23 @@ Before you begin, ensure you have the following:
 
 This action relies on the [aws-actions/configure-aws-credentials](https://github.com/aws-actions/configure-aws-credentials) action to set up AWS authentication in your GitHub Actions Environment. We recommend using OpenID Connect (OIDC) to authenticate with AWS. OIDC allows your GitHub Actions workflows to access AWS resources using short-lived AWS credentials so you do not have to store long-term credentials in your repository.
 
-1. Create an IAM Identity Provider
+#### 1. Create an IAM Identity Provider
 
 First, create an IAM Identity Provider that trusts GitHub's OIDC endpoint in the AWS Management Console:
-* **Provider Type**: OpenID Connect
-* **Provider URL**: `https://token.actions.githubusercontent.com`
-* **Audience**: `sts.amazonaws.com`
 
-2. Create an IAM Policy
+  1. Open IAM console at https://console.aws.amazon.com/iam/
+  2. Choose **Identity providers** under **Access management** in the left navigation pane
+  3. Click **Add provider** to create a GitHub identity provider if one does not already exist
+  4. For **Provider type**, choose **OpenID Connect**
+  5. In the **Provider URL** field, enter `https://token.actions.githubusercontent.com`
+  6. In the **Audience** field, enter `sts.amazonaws.com`
+  7. Choose **Add provider** to complete the setup.
+  
+#### 2. Create an IAM Policy
 
 Create an IAM policy with the required permissions for this action. See the [Required Permissions](#required-permissions) section below for details.
 
-3. Create an IAM Role
+#### 3. Create an IAM Role
 
 Create an IAM role (for example, `AWS_IAM_ROLE_ARN`) in the AWS Management Console with the following trust policy template. This allows authorized GitHub repositories to assume the role:
 
@@ -75,7 +80,7 @@ Replace the following placeholders in the template:
 * `<GITHUB_REPOSITORY>` - Your repository name
 * `<GITHUB_BRANCH>` - Your branch name (e.g., main)
 
-4. Attach the IAM Policy
+#### 4. Attach the IAM Policy
 
 In the role's Permissions tab, attach the IAM policy you created in step 2.
 
@@ -84,14 +89,14 @@ For more information about configuring OIDC with AWS,  see the [configure-aws-cr
 
 #### Step 2: Configure Secrets and Add Workflow
 
-1. Configure Repository Secrets
+#### 1. Configure Repository Secrets
 
 Go to your repository → Settings → Secrets and variables → Actions.
 
   - Create a new repository secret named `AWS_IAM_ROLE_ARN` and set its value to the ARN of the IAM role you created in Step 1.
   - (Optional) Create a repository variable named `AWS_REGION` to specify your AWS region (defaults to `us-east-1` if not set)
 
-2. Add the Workflow File
+#### 2. Add the Workflow File
 
 Create Application Observability Investigation workflow from the following [template](./template/awsapm.yaml) to your GitHub Repository directory `.github/workflows`.
 ```yaml
@@ -169,15 +174,15 @@ Once the workflow is configured, mention @awsapm in any GitHub issue to trigger 
 
 **Example Use Cases:**
 
-1. Investigate performance issues:
+#### 1. Investigate performance issues:
 
 `@awsapm, can you investigate why my service is breaching its SLO?`
 
-2. Enable instrumentation:
+#### 2. Enable instrumentation:
 
 `@awsapm, please enable Application Signals for lambda-audit-service and create a PR with the required changes.`
 
-3. Query telemetry data:
+#### 3. Query telemetry data:
 
 `@awsapm, how many GenAI tokens have been consumed by my services in the past 24 hours?`
 
@@ -218,7 +223,9 @@ See the [Security Documentation](./docs/security.md).
 
 ### Required Permissions
 
-The IAM role assumed by GitHub Actions must have the following permissions:
+The IAM role assumed by GitHub Actions must have the following permissions.
+
+**Note:** The `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` permissions are only required if you're using Amazon Bedrock models.
 
 ```json
 {
@@ -268,14 +275,13 @@ The IAM role assumed by GitHub Actions must have the following permissions:
     ]
 }
 ```
-**Note:** The `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` permissions are only required if you're using Amazon Bedrock models.
+
 
 ## 📖 Documentation
 
 For more information, check out:
 
 - [AWS Application Signals Documentation](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Monitoring-Intro.html) - Learn about Application Signals features and capabilities
-- [Application observability for AWS Action Public Documentation](https://github.com/marketplace/actions/application-observability-for-aws-action) - Detailed guides and tutorials
 
 ## 💰 Cost Considerations
 Using this action incurs costs in the following areas:
