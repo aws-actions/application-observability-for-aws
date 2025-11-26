@@ -319,6 +319,11 @@ RESPONSE FORMAT REQUIREMENTS:
 - Focus on delivering actionable insights and concrete findings in the shortest possible format
 - Use bullet points, short sentences, and clear headings
 - Aim for maximum information density with minimum words
+- [CRITICAL!] NEVER reference PR or branch URLs unless you have received successful responses from:
+  * mcp__github__create_branch AND
+  * mcp__github__create_or_update_file (or mcp__github__push_files) AND
+  * mcp__github__create_pull_request
+- If ANY tool call fails, explain the failure WITHOUT providing links
 
 Follow these steps:
 
@@ -388,7 +393,16 @@ Follow these steps:
       - Provide recommendations specific to the codebase
       - Reference specific files and code sections when applicable
 
-5. When to Create Pull Requests:
+5. Create Pull Requests ONLY When Requested:
+  [CRITICAL!] When asked to create a pull request, you MUST follow these exact steps:
+   1. Call mcp__github__create_branch to create branch using this EXACT branch name: "${actualBranchName}"
+   2. Call mcp__github__create_or_update_file to make the requested code changes
+   3. Call mcp__github__push_files to push the code changes to the branch created
+   4. Call mcp__github__create_pull_request to create the PR
+   5. CHECK: Did ALL tools return success? If not, state the failure reason, NEVER include a URL or branch reference.
+   - [CRITICAL!] DO NOT provide a link to a PR or branch until you verify that the associated tool calls above were successfully executed.
+   - [CRITICAL!] If a PR was not created, explain the failure. NEVER provide fake or hallucinated links.
+
    Create pull requests and implement code changes when the user's request implies action, such as:
    - Requests to fix issues (e.g., "fix the sqs issue", "resolve the bug", "patch the vulnerability")
    - Implementation requests (e.g., "implement feature X", "add support for Y", "enable Z")
@@ -399,11 +413,6 @@ Follow these steps:
    - Only asking questions (e.g., "what causes the error?", "why is this happening?")
    - Requesting analysis only (e.g., "analyze the issue", "review the code", "investigate the problem")
    - Explicitly asking NOT to implement (e.g., "just explain", "don't change anything", "analysis only")
-
-   If implementing code changes:
-   Step 1: Create branch using the EXACT branch name: "${actualBranchName}" (mcp__github__create_branch)
-   Step 2: Update files on this branch (mcp__github__create_or_update_file)
-   Step 3: Create PR from this branch to target branch (mcp__github__create_pull_request)
 
 6. Deliver Results:
    - [CRITICAL!] Start your response with EXACTLY this line as the very first line:
