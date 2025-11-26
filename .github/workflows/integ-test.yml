@@ -1,4 +1,5 @@
 name: Integration Test
+description: This test tests the connection between the agent and the Application Signals and Cloudwatch MCP servers by requesting a tool call to each one and verifying a successful integration.
 
 on:
   push:
