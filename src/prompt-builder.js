@@ -400,10 +400,11 @@ Follow these steps:
    - Requesting analysis only (e.g., "analyze the issue", "review the code", "investigate the problem")
    - Explicitly asking NOT to implement (e.g., "just explain", "don't change anything", "analysis only")
 
-   If implementing code changes:
-   Step 1: Create branch using the EXACT branch name: "${actualBranchName}" (mcp__github__create_branch)
-   Step 2: Update files on this branch (mcp__github__create_or_update_file)
-   Step 3: Create PR from this branch to target branch (mcp__github__create_pull_request)
+   [CRITICAL!] When creating a pull request, you MUST use the following GitHub MCP tools in the following order:
+   1. mcp__github__create_branch (Create branch using the EXACT branch name: "${actualBranchName}")
+   2. mcp__github__create_or_update_file (Update files on branch created)
+   3. mcp__github__create_pull_request (Create the actual PR from the created branch to the target branch)
+   - [CRITICAL!] NEVER post fake or hallucinated PR links in your response. You should only link to a PR that you explicitly created with the "mcp__github__create_pull_request" tool call.
 
 6. Deliver Results:
    - [CRITICAL!] Start your response with EXACTLY this line as the very first line:
