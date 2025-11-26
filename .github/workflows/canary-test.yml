@@ -1,4 +1,5 @@
-name: Soak Test
+name: Canary Test
+description: This test verifies the connection between the agent and the MCPs. It runs every hour and notifies us of any failed tool calls that may indicate a breaking change in the MCP.
 
 on:
   schedule:
@@ -8,7 +9,7 @@ env:
   AWS_DEFAULT_REGION: us-east-1
 
 jobs:
-  awsapm-soak-test:
+  awsapm-canary-test:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -51,7 +52,7 @@ jobs:
           retention-days: 1
 
   verify-mcp-usage:
-    needs: awsapm-soak-test
+    needs: awsapm-canary-test
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -70,7 +71,7 @@ jobs:
           execution_file: ./claude-execution-output.json
 
   publish-metric:
-    needs: [awsapm-soak-test, verify-mcp-usage]
+    needs: [awsapm-canary-test, verify-mcp-usage]
     runs-on: ubuntu-latest
     if: always()
     permissions:
@@ -82,9 +83,9 @@ jobs:
           role-to-assume: ${{ secrets.MONITORING_ROLE_ARN }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
-      - name: Publish soak test status
+      - name: Publish canary test status
         run: |
-          if [[ "${{ needs.awsapm-soak-test.result }}" == "success" && "${{ needs.verify-mcp-usage.result }}" == "success" ]]; then
+          if [[ "${{ needs.awsapm-canary-test.result }}" == "success" && "${{ needs.verify-mcp-usage.result }}" == "success" ]]; then
             value="1.0"
           else
             value="0.0"
@@ -92,4 +93,4 @@ jobs:
           
           aws cloudwatch put-metric-data \
             --namespace 'ADOT/GithubActions' \
-            --metric-data MetricName=Success,Value=$value,Dimensions="[{Name=repository,Value=${{ github.repository }}},{Name=branch,Value=${{ github.ref_name }}},{Name=workflow,Value=soak_test}]"
+            --metric-data MetricName=Success,Value=$value,Dimensions="[{Name=repository,Value=${{ github.repository }}},{Name=branch,Value=${{ github.ref_name }}},{Name=workflow,Value=canary_test}]"
