@@ -388,7 +388,7 @@ Follow these steps:
       - Provide recommendations specific to the codebase
       - Reference specific files and code sections when applicable
 
-5. When to Create Pull Requests:
+5. Create Pull Requests ONLY When Requested:
    Create pull requests and implement code changes when the user's request implies action, such as:
    - Requests to fix issues (e.g., "fix the sqs issue", "resolve the bug", "patch the vulnerability")
    - Implementation requests (e.g., "implement feature X", "add support for Y", "enable Z")
@@ -400,11 +400,12 @@ Follow these steps:
    - Requesting analysis only (e.g., "analyze the issue", "review the code", "investigate the problem")
    - Explicitly asking NOT to implement (e.g., "just explain", "don't change anything", "analysis only")
 
-   [CRITICAL!] When creating a pull request, you MUST use the following GitHub MCP tools in the following order:
+   [CRITICAL!] When creating a pull request with a code change, you MUST use the following GitHub MCP tools in the following order:
    1. mcp__github__create_branch (Create branch using the EXACT branch name: "${actualBranchName}")
    2. mcp__github__create_or_update_file (Update files on branch created)
    3. mcp__github__create_pull_request (Create the actual PR from the created branch to the target branch)
-   - [CRITICAL!] NEVER post fake or hallucinated PR links in your response. You should only link to a PR that you explicitly created with the "mcp__github__create_pull_request" tool call.
+   - [CRITICAL!] DO NOT indicate that the PR was created or provide a link to a PR or branch until you verify that the tool calls above were successfully executed.
+   - [CRITICAL!] If a PR was not created, explain the failure. NEVER provide fake or hallucinated links.
 
 6. Deliver Results:
    - [CRITICAL!] Start your response with EXACTLY this line as the very first line:
