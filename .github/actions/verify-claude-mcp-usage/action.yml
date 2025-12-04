@@ -1,0 +1,42 @@
+name: "Verify Claude MCP Usage"
+description: "Verifies that Claude execution calls both CloudWatch and Application Signals MCP tools"
+
+inputs:
+  execution_file:
+    description: "Path to Claude execution output JSON file"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Verify MCP tool usage
+      shell: bash
+      run: |
+        echo "Checking for MCP tool usage..."
+        
+        EXECUTION_FILE="${{ inputs.execution_file }}"
+        
+        if [[ ! -f "$EXECUTION_FILE" ]]; then
+          echo "ERROR: Execution file not found at $EXECUTION_FILE"
+          exit 1
+        fi
+        
+        echo "Checking for tool_use calls..."
+        
+        # Check for Application Signals MCP tool_use
+        if jq -e '.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "mcp__applicationsignals__list_monitored_services")' "$EXECUTION_FILE" > /dev/null; then
+          echo "✅ PASSED - list_monitored_services tool call found"
+        else
+          echo "❌ FAILED: list_monitored_services tool call not found"
+          exit 1
+        fi
+        
+        # Check for CloudWatch MCP tool_use
+        if jq -e '.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "mcp__awslabs_cloudwatch-mcp-server__get_active_alarms")' "$EXECUTION_FILE" > /dev/null; then
+          echo "✅ PASSED - get_active_alarms tool call found"
+        else
+          echo "❌ FAILED: get_active_alarms tool call not found"
+          exit 1
+        fi
+        
+        echo "🎉 All MCP tool usage verification checks passed!"

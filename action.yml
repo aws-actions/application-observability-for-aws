@@ -1,4 +1,4 @@
-name: "Application observability for AWS Action"
+name: "Application observability for AWS"
 description: "Support Agentic AI–driven performance investigation and resolution using live production telemetry."
 branding:
   icon: "cloud"
@@ -45,6 +45,10 @@ inputs:
     description: "Enable CloudWatch MCP server for metrics, alarms, and log insights"
     required: false
     default: "true"
+  test_mode:
+    description: "Enable integration test mode (internal use only)"
+    required: false
+    default: "false"
 
 outputs:
   # Preparation outputs for claude-code-base-action
@@ -72,6 +76,15 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Validate test mode usage
+      if: inputs.test_mode == 'true'
+      shell: bash
+      run: |
+        if [[ "${{ github.repository }}" != "aws-actions/application-observability-for-aws" || "${{ github.ref_name }}" != "main" ]]; then
+          echo "::error::not authorized to run test mode in this repository"
+          exit 1
+        fi
+
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:
@@ -98,6 +111,7 @@ runs:
         ALLOWED_NON_WRITE_USERS: ${{ inputs.allowed_non_write_users }}
         GITHUB_RUN_ID: ${{ github.run_id }}
         DEFAULT_WORKFLOW_TOKEN: ${{ github.token }}
+        TEST_MODE: ${{ inputs.test_mode }}
 
     # Validate CLI tool input
     - name: Validate CLI Tool

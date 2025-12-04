@@ -20,6 +20,7 @@ async function run() {
     const targetBranch = process.env.TARGET_BRANCH || '';
     const allowedNonWriteUsers = process.env.ALLOWED_NON_WRITE_USERS || '';
     const customPrompt = process.env.CUSTOM_PROMPT || '';
+    const testMode = process.env.TEST_MODE || 'false';
 
     // Function to check for bot name trigger phrase
     // Must contain "@awsapm" prefix (case-insensitive)
@@ -74,6 +75,11 @@ async function run() {
         // We still want to search for existing result comments when editing
         commentId = null; // Explicitly set to null for clarity
       }
+    } else if (testMode === 'true') {
+      // In test mode, always trigger and use custom prompt
+      containsTrigger = true;
+      triggerText = customPrompt;
+      triggerUsername = 'integration-test';
     }
 
     // Set output for action.yml to check
@@ -233,25 +239,34 @@ async function run() {
     // Remove bot name from the user's request
     const cleanedUserRequest = triggerText.replace(new RegExp(botName, 'gi'), '').trim();
 
-    // Use the dynamic prompt generation with PR context
-    const { createGeneralPrompt } = require('./prompt-builder');
-
-    try {
-      const finalPrompt = await createGeneralPrompt(context, repoInfo, cleanedUserRequest, githubToken, awsapmBranch);
-      fs.writeFileSync(promptFile, finalPrompt);
-    } catch (promptError) {
-      core.error(`Failed to generate dynamic prompt: ${promptError.message}`);
-
-      // Fallback to basic prompt if dynamic generation fails
-      let fallbackPrompt = '';
-      if (customPrompt) {
-        fallbackPrompt = customPrompt + '\n\n';
+    if (testMode === 'true') {
+      // for integration test, use custom prompt directly
+      try {
+        fs.writeFileSync(promptFile, customPrompt);
+      } catch (error) {
+        core.error(`Failed to write custom prompt to file: ${error.message}`);
+        process.exit(1);
       }
-      fallbackPrompt += `Please analyze this ${isPR ? 'pull request' : 'issue'} using AI Agent for insights.\n\n`;
-      fallbackPrompt += `Original request: ${cleanedUserRequest}\n\n`;
-      fallbackPrompt += `Context: This is a ${context.eventName} event in ${context.repo.owner}/${context.repo.repo}`;
+    } else {
+      // Use the dynamic prompt generation with PR context
+      const { createGeneralPrompt } = require('./prompt-builder');
 
-      fs.writeFileSync(promptFile, fallbackPrompt);
+      try {
+        const finalPrompt = await createGeneralPrompt(context, repoInfo, cleanedUserRequest, githubToken, awsapmBranch);
+        fs.writeFileSync(promptFile, finalPrompt);
+      } catch (promptError) {
+        core.error(`Failed to generate dynamic prompt: ${promptError.message}`);
+        // Fallback to basic prompt if dynamic generation fails
+        let fallbackPrompt = '';
+        if (customPrompt) {
+          fallbackPrompt = customPrompt + '\n\n';
+        }
+        fallbackPrompt += `Please analyze this ${isPR ? 'pull request' : 'issue'} using AI Agent for insights.\n\n`;
+        fallbackPrompt += `Original request: ${cleanedUserRequest}\n\n`;
+        fallbackPrompt += `Context: This is a ${context.eventName} event in ${context.repo.owner}/${context.repo.repo}`;
+
+        fs.writeFileSync(promptFile, fallbackPrompt);
+      }
     }
 
     // Set outputs
@@ -275,6 +290,11 @@ async function run() {
  * Check if user has write or admin permissions to the repository
  */
 async function checkUserPermissions(octokit, context, issueNumber, allowedNonWriteUsers) {
+  const testMode = process.env.TEST_MODE || 'false';
+  if (testMode === 'true') {
+    return true;
+  }
+
   const actor = context.actor;
   core.debug(`Checking permissions for actor: ${actor}`);
 
