@@ -1,5 +1,5 @@
 /**
- * Centralized MCP configuration management for Amazon Q CLI
+ * Centralized MCP configuration management for Claude Code CLI
  * Provides a single source of truth for MCP configurations
  */
 class MCPConfigManager {
@@ -115,7 +115,53 @@ class MCPConfigManager {
   }
 
   /**
-   * Build complete MCP configuration for Amazon Q CLI
+   * Get allowed tools string for Claude CLI (with explicit tool names)
+   * Note:
+   * - Bash tools are already allowed by claude-code-base-action
+   * - MCP tools MUST be in allowed_tools for claude-code-base-action
+   *   (autoApprove in MCP config file alone is not sufficient)
+   * - claude-code-base-action does NOT support wildcards, must use explicit tool names
+   */
+  getAllowedToolsForClaude() {
+    const workingDir = process.env.GITHUB_WORKSPACE || process.cwd();
+
+    const allowedTools = [
+      // File operations (restricted to target repository)
+      `Read(${workingDir}/**)`,
+      `Edit(${workingDir}/**)`,
+      `MultiEdit(${workingDir}/**)`,
+      `Glob(${workingDir}/**)`,
+      `Grep(${workingDir}/**)`,
+
+      // System commands (restricted to working directory)
+      `Bash(ls:${workingDir}/**)`,
+      `Bash(find:${workingDir}/**)`,
+      `Bash(cat:${workingDir}/**)`,
+      `Bash(head:${workingDir}/**)`,
+      `Bash(tail:${workingDir}/**)`,
+      `Bash(wc:${workingDir}/**)`
+    ];
+
+    // Add AWS MCP tools if credentials are available
+    // Must use explicit tool names (wildcards not supported by claude-code-base-action)
+    if (this.hasAWSCredentials()) {
+      allowedTools.push(...this.getApplicationSignalsToolsList());
+
+      if (this.hasCloudWatchAccess()) {
+        allowedTools.push(...this.getCloudWatchToolsList());
+      }
+    }
+
+    // Add GitHub MCP tools if token available
+    if (this.hasGitHubToken()) {
+      allowedTools.push(...this.getGitHubToolsList());
+    }
+
+    return allowedTools.join(',');
+  }
+
+  /**
+   * Build complete MCP configuration for Claude Code CLI
    * @returns {object} MCP configuration object
    */
   buildMCPConfig() {
@@ -125,9 +171,9 @@ class MCPConfigManager {
     if (this.hasAWSCredentials()) {
       const applicationSignalsConfig = this.getApplicationSignalsServerConfig();
 
-      // Amazon Q CLI format
       config.mcpServers["applicationsignals"] = {
         ...applicationSignalsConfig,
+        env: this.getAWSEnvVars(),
         autoApprove: this.getApplicationSignalsToolsList(),
         disabled: false
       };
@@ -139,6 +185,7 @@ class MCPConfigManager {
 
       config.mcpServers["awslabs.cloudwatch-mcp-server"] = {
         ...cloudwatchConfig,
+        env: this.getAWSEnvVars(),
         autoApprove: this.getCloudWatchToolsList(),
         disabled: false
       };

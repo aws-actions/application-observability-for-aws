@@ -146,14 +146,24 @@ describe('init', () => {
       expect(core.setOutput).toHaveBeenCalledWith('contains_trigger', 'false');
     });
 
-    test('handles different bot names', async () => {
+    test('handles bot name variations with @awsapm prefix', async () => {
+      process.env.BOT_NAME = '@awsapm-prod';
+      process.env.DEFAULT_WORKFLOW_TOKEN = 'test-token';
+      mockContext.payload.comment.body = '@awsapm-prod help me';
+
+      await run();
+
+      expect(core.setOutput).toHaveBeenCalledWith('contains_trigger', 'true');
+    });
+
+    test('does not trigger on non-@awsapm bot names', async () => {
       process.env.BOT_NAME = '@mybot';
       process.env.DEFAULT_WORKFLOW_TOKEN = 'test-token';
       mockContext.payload.comment.body = '@mybot help me';
 
       await run();
 
-      expect(core.setOutput).toHaveBeenCalledWith('contains_trigger', 'true');
+      expect(core.setOutput).toHaveBeenCalledWith('contains_trigger', 'false');
     });
 
     test('case insensitive bot name matching', async () => {

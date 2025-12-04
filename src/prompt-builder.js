@@ -407,7 +407,7 @@ Follow these steps:
 
 6. Deliver Results:
    - [CRITICAL!] Start your response with EXACTLY this line as the very first line:
-     🎯 **Application observability for AWS Assistant Result**
+     🎯 **Application observability for AWS Investigation Result**
    - This marker MUST be the first line of your response (no content before it)
    - [CRITICAL!] ALWAYS use proper markdown formatting in your response:
      * Use ## for section headers (e.g., ## Root Cause, ## Analysis)

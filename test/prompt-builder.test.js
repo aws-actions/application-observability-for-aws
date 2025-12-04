@@ -72,7 +72,7 @@ describe('prompt-builder', () => {
 
     test('includes result marker instruction', async () => {
       const prompt = await createGeneralPrompt(mockContext, mockRepoInfo, 'test');
-      expect(prompt).toContain('🎯 **Application observability for AWS Assistant Result**');
+      expect(prompt).toContain('🎯 **Application observability for AWS Investigation Result**');
       expect(prompt).toContain('CRITICAL!');
       expect(prompt).toContain('first line of your response');
     });
@@ -124,7 +124,7 @@ describe('prompt-builder', () => {
     test('handles empty user input', async () => {
       const prompt = await createGeneralPrompt(mockContext, mockRepoInfo, '');
       expect(prompt).toBeDefined();
-      expect(prompt).toContain('🎯 **Application observability for AWS Assistant Result**');
+      expect(prompt).toContain('🎯 **Application observability for AWS Investigation Result**');
     });
 
     test('handles multiline user input', async () => {

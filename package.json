@@ -1,6 +1,6 @@
 {
   "name": "application-observability-for-aws-action",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A GitHub Action that provides automated application observability assistant for AWS customers",
   "main": "src/init.js",
   "scripts": {

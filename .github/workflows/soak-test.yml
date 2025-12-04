@@ -1,0 +1,95 @@
+name: Soak Test
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # every hour
+
+env:
+  AWS_DEFAULT_REGION: us-east-1
+
+jobs:
+  awsapm-soak-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWSAPM_TEST_ROLE_ARN }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Prepare Investigation Context
+        id: prepare
+        uses: ./
+        with:
+          test_mode: "true"
+          custom_prompt: "Use the list_monitored_services tool to show me all services currently monitored by AWS Application Signals. Also use the get_active_alarms tool to show me all active CloudWatch alarms."
+
+      - name: Run Claude Investigation
+        id: claude
+        uses: anthropics/claude-code-base-action@beta
+        with:
+          use_bedrock: "true" 
+          model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+          prompt_file: ${{ steps.prepare.outputs.prompt_file }}
+          mcp_config: ${{ steps.prepare.outputs.mcp_config_file }}
+          allowed_tools: ${{ steps.prepare.outputs.allowed_tools }}
+
+      - name: Upload Claude execution output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-output
+          path: ${{ steps.claude.outputs.execution_file }}
+          retention-days: 1
+
+  verify-mcp-usage:
+    needs: awsapm-soak-test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Download Claude execution output
+        uses: actions/download-artifact@v4
+        with:
+          name: claude-execution-output
+          path: ./
+        
+      - name: Verify MCP tool usage
+        uses: ./.github/actions/verify-claude-mcp-usage
+        with:
+          execution_file: ./claude-execution-output.json
+
+  publish-metric:
+    needs: [awsapm-soak-test, verify-mcp-usage]
+    runs-on: ubuntu-latest
+    if: always()
+    permissions:
+      id-token: write
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 #5.0.0
+        with:
+          role-to-assume: ${{ secrets.MONITORING_ROLE_ARN }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Publish soak test status
+        run: |
+          if [[ "${{ needs.awsapm-soak-test.result }}" == "success" && "${{ needs.verify-mcp-usage.result }}" == "success" ]]; then
+            value="1.0"
+          else
+            value="0.0"
+          fi
+          
+          aws cloudwatch put-metric-data \
+            --namespace 'ADOT/GithubActions' \
+            --metric-data MetricName=Success,Value=$value,Dimensions="[{Name=repository,Value=${{ github.repository }}},{Name=branch,Value=${{ github.ref_name }}},{Name=workflow,Value=soak_test}]"

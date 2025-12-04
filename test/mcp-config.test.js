@@ -274,4 +274,105 @@ describe('MCPConfigManager', () => {
       expect(envVars.AWS_REGION).toBe('us-east-1');
     });
   });
+
+  describe('getAllowedToolsForClaude', () => {
+    test('returns base file operation tools when no credentials', () => {
+      delete process.env.AWS_ACCESS_KEY_ID;
+      delete process.env.AWS_SECRET_ACCESS_KEY;
+      delete process.env.GITHUB_TOKEN;
+      process.env.GITHUB_WORKSPACE = '/workspace/repo';
+
+      const allowedTools = manager.getAllowedToolsForClaude();
+
+      expect(allowedTools).toContain('Read(/workspace/repo/**)');
+      expect(allowedTools).toContain('Edit(/workspace/repo/**)');
+      expect(allowedTools).toContain('Glob(/workspace/repo/**)');
+      expect(allowedTools).toContain('Grep(/workspace/repo/**)');
+      expect(allowedTools).toContain('Bash(ls:/workspace/repo/**)');
+    });
+
+    test('includes Application Signals tools when AWS credentials present', () => {
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      delete process.env.GITHUB_TOKEN;
+      process.env.GITHUB_WORKSPACE = '/workspace/repo';
+
+      const allowedTools = manager.getAllowedToolsForClaude();
+
+      expect(allowedTools).toContain('mcp__applicationsignals__list_monitored_services');
+      expect(allowedTools).toContain('Read(/workspace/repo/**)');
+    });
+
+    test('includes CloudWatch tools when enabled and AWS credentials present', () => {
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      process.env.ENABLE_CLOUDWATCH_MCP = 'true';
+      delete process.env.GITHUB_TOKEN;
+      process.env.GITHUB_WORKSPACE = '/workspace/repo';
+
+      const allowedTools = manager.getAllowedToolsForClaude();
+
+      expect(allowedTools).toContain('mcp__awslabs_cloudwatch-mcp-server__get_metric_data');
+      expect(allowedTools).toContain('mcp__applicationsignals__list_monitored_services');
+    });
+
+    test('includes GitHub tools when token present', () => {
+      delete process.env.AWS_ACCESS_KEY_ID;
+      delete process.env.AWS_SECRET_ACCESS_KEY;
+      process.env.GITHUB_TOKEN = 'ghp_test123';
+      process.env.GITHUB_WORKSPACE = '/workspace/repo';
+
+      const allowedTools = manager.getAllowedToolsForClaude();
+
+      expect(allowedTools).toContain('mcp__github__create_pull_request');
+      expect(allowedTools).toContain('Read(/workspace/repo/**)');
+    });
+
+    test('includes all tools when all credentials present', () => {
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      process.env.ENABLE_CLOUDWATCH_MCP = 'true';
+      process.env.GITHUB_TOKEN = 'ghp_test123';
+      process.env.GITHUB_WORKSPACE = '/workspace/repo';
+
+      const allowedTools = manager.getAllowedToolsForClaude();
+
+      // Should include base tools
+      expect(allowedTools).toContain('Read(/workspace/repo/**)');
+      // Should include Application Signals tools
+      expect(allowedTools).toContain('mcp__applicationsignals__list_monitored_services');
+      // Should include CloudWatch tools
+      expect(allowedTools).toContain('mcp__awslabs_cloudwatch-mcp-server__get_metric_data');
+      // Should include GitHub tools
+      expect(allowedTools).toContain('mcp__github__create_pull_request');
+    });
+
+    test('uses process.cwd() when GITHUB_WORKSPACE not set', () => {
+      delete process.env.AWS_ACCESS_KEY_ID;
+      delete process.env.AWS_SECRET_ACCESS_KEY;
+      delete process.env.GITHUB_TOKEN;
+      delete process.env.GITHUB_WORKSPACE;
+
+      const allowedTools = manager.getAllowedToolsForClaude();
+      const cwd = process.cwd();
+
+      expect(allowedTools).toContain(`Read(${cwd}/**)`);
+      expect(allowedTools).toContain(`Bash(ls:${cwd}/**)`);
+    });
+
+    test('returns comma-separated string', () => {
+      delete process.env.AWS_ACCESS_KEY_ID;
+      delete process.env.AWS_SECRET_ACCESS_KEY;
+      delete process.env.GITHUB_TOKEN;
+      process.env.GITHUB_WORKSPACE = '/workspace/repo';
+
+      const allowedTools = manager.getAllowedToolsForClaude();
+
+      expect(typeof allowedTools).toBe('string');
+      expect(allowedTools.includes(',')).toBe(true);
+
+      const toolsArray = allowedTools.split(',');
+      expect(toolsArray.length).toBeGreaterThan(0);
+    });
+  });
 });
