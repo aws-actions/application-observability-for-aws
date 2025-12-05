@@ -4,9 +4,6 @@ description: This test verifies the connection between the agent and the MCPs. I
 on:
   schedule:
     - cron: '0 * * * *'  # every hour
-  push:
-    branches:
-      - canary-patch
 
 env:
   AWS_DEFAULT_REGION: us-east-1
