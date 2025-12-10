@@ -178,7 +178,10 @@ class MCPConfigManager {
 
       config.mcpServers["applicationsignals"] = {
         ...applicationSignalsConfig,
-        env: this.getAWSEnvVars(),
+        env: {
+          ...applicationSignalsConfig.env,
+          ...this.getAWSEnvVars()
+        },
         autoApprove: this.getApplicationSignalsToolsList(),
         disabled: false
       };
@@ -190,7 +193,10 @@ class MCPConfigManager {
 
       config.mcpServers["awslabs.cloudwatch-mcp-server"] = {
         ...cloudwatchConfig,
-        env: this.getAWSEnvVars(),
+        env: {
+          ...cloudwatchConfig.env,
+          ...this.getAWSEnvVars()
+        },
         autoApprove: this.getCloudWatchToolsList(),
         disabled: false
       };
