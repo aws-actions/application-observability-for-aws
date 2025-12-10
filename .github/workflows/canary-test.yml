@@ -92,5 +92,5 @@ jobs:
           fi
           
           aws cloudwatch put-metric-data \
-            --namespace 'ADOT/GithubActions' \
+            --namespace 'ADOT/GitHubActions' \
             --metric-data MetricName=Success,Value=$value,Dimensions="[{Name=repository,Value=${{ github.repository }}},{Name=branch,Value=${{ github.ref_name }}},{Name=workflow,Value=canary_test}]"
