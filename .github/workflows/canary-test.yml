@@ -2,6 +2,7 @@ name: Canary Test
 description: This test verifies the connection between the agent and the MCPs. It runs every hour and notifies us of any failed tool calls that may indicate a breaking change in the MCP.
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 * * * *'  # every hour
 
