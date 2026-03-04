@@ -42,6 +42,8 @@ jobs:
           prompt_file: ${{ steps.prepare.outputs.prompt_file }}
           mcp_config: ${{ steps.prepare.outputs.mcp_config_file }}
           allowed_tools: ${{ steps.prepare.outputs.allowed_tools }}
+          claude_env: |
+            ANTHROPIC_SMALL_FAST_MODEL: us.anthropic.claude-haiku-4-5-20251001-v1:0
 
       - name: Upload Claude execution output
         if: always()
