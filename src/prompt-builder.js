@@ -7,6 +7,11 @@ const core = require('@actions/core');
 function getEventTriggerTime(context) {
   if (context.eventName === 'issue_comment') {
     return context.payload.comment?.created_at;
+  } else if (context.eventName === 'issues') {
+    // Use the issue snapshot carried by the webhook rather than a later live value.
+    // This gives opened, assigned, and edited events a fixed approval boundary so
+    // comments created or edited after the authorized event are filtered out.
+    return context.payload.issue?.updated_at || context.payload.issue?.created_at;
   } else if (context.eventName === 'pull_request_review') {
     return context.payload.review?.submitted_at;
   } else if (context.eventName === 'pull_request_review_comment') {
@@ -59,6 +64,20 @@ async function fetchGitHubConversation(context, githubToken) {
 
     // Get trigger time for security filtering
     const triggerTime = getEventTriggerTime(context);
+
+    // Live comments are untrusted mutable state. If an event that consumes them
+    // has no valid immutable cutoff, fail closed instead of importing all of them.
+    const conversationEvents = [
+      'issue_comment',
+      'issues',
+      'pull_request_review',
+      'pull_request_review_comment'
+    ];
+    if (conversationEvents.includes(context.eventName) &&
+        (!triggerTime || !Number.isFinite(new Date(triggerTime).getTime()))) {
+      core.warning(`No valid trigger timestamp for ${context.eventName}; omitting live comments`);
+      return [];
+    }
 
     let comments = [];
 

@@ -127,24 +127,24 @@ class MCPConfigManager {
     const workingDir = process.env.GITHUB_WORKSPACE || process.cwd();
 
     const allowedTools = [
-      // File operations (restricted to target repository)
+      // File operations — restricted to the target repository workspace.
+      // These native tools are path-scoped to ${workingDir}, so the agent can
+      // read/search/edit repo files but nothing outside the workspace.
       "LS",
       `Read(/${workingDir}/**)`,
       `Edit(/${workingDir}/**)`,
       `MultiEdit(/${workingDir}/**)`,
       `Write(/${workingDir}/**)`,
       `Glob(/${workingDir}/**)`,
-      `Grep(/${workingDir}/**)`,
+      `Grep(/${workingDir}/**)`
 
-      // System commands (restricted to working directory)
-      "Bash(ls:*)",
-      "Bash(find:*)",
-      "Bash(cat:*)",
-      "Bash(head:*)",
-      "Bash(tail:*)",
-      "Bash(wc:*)",
-      "Bash(grep:*)",
-      "Bash(xargs:*)"
+      // NOTE: Broad shell file/enumeration commands (Bash(cat:*), Bash(find:*),
+      // Bash(grep:*), Bash(xargs:*), etc.) are intentionally NOT granted.
+      // claude-code-base-action cannot path-scope Bash arguments, so those
+      // patterns would allow reading arbitrary files outside the workspace
+      // (e.g. the generated MCP credential config in the runner temp dir) and
+      // chaining commands. The path-scoped native tools above cover legitimate
+      // repository investigation without that exposure.
     ];
 
     // Add AWS MCP tools if credentials are available

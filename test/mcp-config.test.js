@@ -288,7 +288,32 @@ describe('MCPConfigManager', () => {
       expect(allowedTools).toContain('Edit(//workspace/repo/**)');
       expect(allowedTools).toContain('Glob(//workspace/repo/**)');
       expect(allowedTools).toContain('Grep(//workspace/repo/**)');
-      expect(allowedTools).toContain('Bash(ls:*)');
+      expect(allowedTools).toContain('LS');
+    });
+
+    test('does NOT grant broad unscoped shell file/enumeration commands', () => {
+      // Security regression: these Bash patterns are unscoped in
+      // claude-code-base-action and would allow reading files outside the
+      // workspace (e.g. the MCP credential config). They must not be granted.
+      process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+      process.env.GITHUB_TOKEN = 'ghp_test123';
+      process.env.GITHUB_WORKSPACE = '/workspace/repo';
+
+      const allowedTools = manager.getAllowedToolsForClaude();
+
+      for (const forbidden of [
+        'Bash(cat:*)',
+        'Bash(find:*)',
+        'Bash(grep:*)',
+        'Bash(xargs:*)',
+        'Bash(head:*)',
+        'Bash(tail:*)',
+        'Bash(ls:*)',
+        'Bash(wc:*)',
+      ]) {
+        expect(allowedTools).not.toContain(forbidden);
+      }
     });
 
     test('includes Application Signals tools when AWS credentials present', () => {
@@ -357,7 +382,7 @@ describe('MCPConfigManager', () => {
       const cwd = process.cwd();
 
       expect(allowedTools).toContain(`Read(/${cwd}/**)`);
-      expect(allowedTools).toContain('Bash(ls:*)');
+      expect(allowedTools).toContain('LS');
     });
 
     test('returns comma-separated string', () => {

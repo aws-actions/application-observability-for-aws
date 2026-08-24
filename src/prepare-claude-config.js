@@ -16,6 +16,19 @@ async function run() {
   try {
     core.info('Preparing Claude Code configuration...');
 
+    // Keep the headless investigation synchronous by default. Newer models may
+    // delegate to a built-in background "Explore" subagent and end the main
+    // turn with a placeholder ("Waiting on the background exploration agent to
+    // finish..."), which the downstream action would then capture and post as
+    // the result. Exporting this env var here propagates it (via $GITHUB_ENV)
+    // to the subsequent claude-code-base-action step in the same job, so the
+    // fix applies even if the workflow author never sets it. An explicit value
+    // set by the user (at workflow/job level) is respected and not overridden.
+    if (!process.env.CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS) {
+      core.exportVariable('CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS', '1');
+      core.info('Defaulting CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=1 for a synchronous investigation');
+    }
+
     const outputDir = process.env.OUTPUT_DIR || path.join(process.env.RUNNER_TEMP || '/tmp', 'awsapm-prompts');
     const promptFile = process.env.INPUT_PROMPT_FILE;
 
@@ -44,9 +57,14 @@ async function run() {
     const serverCount = Object.keys(mcpConfig.mcpServers).length;
     core.info(`MCP servers configured: ${serverCount}`);
 
-    // Write MCP config to JSON file
+    // Write MCP config to JSON file.
+    // This file contains credential material for the MCP servers, so:
+    //  - it is written to the runner temp dir (OUTPUT_DIR), OUTSIDE the repo
+    //    workspace, which the agent's path-scoped Read/Grep/Glob tools cannot
+    //    reach, and the agent is not granted broad shell read commands; and
+    //  - it is created with owner-only (0600) permissions as defense in depth.
     const mcpConfigFile = path.join(outputDir, 'mcp-servers.json');
-    fs.writeFileSync(mcpConfigFile, JSON.stringify(mcpConfig, null, 2));
+    fs.writeFileSync(mcpConfigFile, JSON.stringify(mcpConfig, null, 2), { mode: 0o600 });
 
     // Get allowed tools for Claude
     const allowedTools = mcpManager.getAllowedToolsForClaude();
