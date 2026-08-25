@@ -347,17 +347,23 @@ Line 2 of custom`;
           issues: {
             listComments: jest.fn().mockResolvedValue({ data: [] })
           },
-          pulls: {
-            listFiles: jest.fn().mockResolvedValue({
-              data: [
-                {
-                  filename: 'src/test.js',
-                  status: 'modified',
-                  additions: 10,
-                  deletions: 5,
-                  patch: '@@ -1,5 +1,10 @@\n+added line'
-                }
-              ]
+          repos: {
+            getCommit: jest.fn().mockResolvedValue({
+              data: { commit: { committer: { date: '2024-12-31T00:00:00Z' } } }
+            }),
+            compareCommits: jest.fn().mockResolvedValue({
+              data: {
+                total_commits: 1,
+                files: [
+                  {
+                    filename: 'src/test.js',
+                    status: 'modified',
+                    additions: 10,
+                    deletions: 5,
+                    patch: '@@ -1,5 +1,10 @@\n+added line'
+                  }
+                ]
+              }
             })
           }
         }
@@ -368,7 +374,11 @@ Line 2 of custom`;
         repo: { owner: 'test-owner', repo: 'test-repo' },
         payload: {
           ...mockContext.payload,
-          pull_request: { number: 123 }
+          pull_request: {
+            number: 123,
+            head: { sha: 'headsha1234567890' },
+            base: { sha: 'basesha1234567890' }
+          }
         }
       };
 
@@ -378,11 +388,86 @@ Line 2 of custom`;
       expect(prompt).toContain('modified');
       expect(prompt).toContain('Additions: +10');
       expect(prompt).toContain('Deletions: -5');
+      // The analyzed snapshot must be identifiable from the prompt.
+      expect(prompt).toContain('headsha1234567890');
+      expect(prompt).toContain('basesha1234567890');
     });
 
     test('does not include changed files when no PR context', async () => {
       const prompt = await createGeneralPrompt(mockContext, mockRepoInfo, 'test');
       expect(prompt).not.toContain('<changed_files>');
+    });
+
+    test('omits the diff when the PR head moved at or after the authorizing event', async () => {
+      // Regression: the diff is the same attacker-mutable live state that comments
+      // were. A push landing after the maintainer's trigger must not reach the prompt.
+      const github = require('@actions/github');
+      const compareCommits = jest.fn();
+      github.getOctokit = jest.fn(() => ({
+        rest: {
+          issues: { listComments: jest.fn().mockResolvedValue({ data: [] }) },
+          pulls: {
+            get: jest.fn().mockResolvedValue({
+              data: { head: { sha: 'latepush' }, base: { sha: 'basesha' } }
+            })
+          },
+          repos: {
+            // trigger comment is at 2025-01-01T00:00:00Z
+            getCommit: jest.fn().mockResolvedValue({
+              data: { commit: { committer: { date: '2025-01-01T00:00:10Z' } } }
+            }),
+            compareCommits
+          }
+        }
+      }));
+
+      const prContext = {
+        ...mockContext,
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: {
+          ...mockContext.payload,
+          pull_request: null,
+          issue: { number: 123, pull_request: { url: 'https://example.invalid/pull/123' } }
+        }
+      };
+
+      const prompt = await createGeneralPrompt(prContext, mockRepoInfo, 'test', 'test-token');
+      expect(prompt).not.toContain('<changed_files>');
+      expect(compareCommits).not.toHaveBeenCalled();
+    });
+
+    test('marks a truncated diff instead of silently under-reporting', async () => {
+      const github = require('@actions/github');
+      github.getOctokit = jest.fn(() => ({
+        rest: {
+          issues: { listComments: jest.fn().mockResolvedValue({ data: [] }) },
+          repos: {
+            getCommit: jest.fn().mockResolvedValue({
+              data: { commit: { committer: { date: '2024-12-31T00:00:00Z' } } }
+            }),
+            compareCommits: jest.fn().mockResolvedValue({
+              data: {
+                total_commits: 5000,
+                files: Array.from({ length: 301 }, (_, i) => ({
+                  filename: `f${i}.js`, status: 'modified', additions: 1, deletions: 0, patch: '+x'
+                }))
+              }
+            })
+          }
+        }
+      }));
+
+      const prContext = {
+        ...mockContext,
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: {
+          ...mockContext.payload,
+          pull_request: { number: 1, head: { sha: 'h' }, base: { sha: 'b' } }
+        }
+      };
+
+      const prompt = await createGeneralPrompt(prContext, mockRepoInfo, 'test', 'test-token');
+      expect(prompt).toContain('truncated');
     });
   });
 
@@ -465,12 +550,22 @@ Line 2 of custom`;
 
     const triggerTime = '2025-01-01T12:00:00Z';
 
-    test('returns all comments when no trigger time provided', () => {
+    test('fails closed when no trigger time is provided', () => {
+      // The guard lives in the filter itself, not only at the call site, so a
+      // future caller cannot reopen the fail-open hole from V2337707056.
       const comments = [
         { createdAt: '2025-01-01T10:00:00Z', body: 'Comment 1' },
         { createdAt: '2025-01-01T11:00:00Z', body: 'Comment 2' }
       ];
-      expect(filterCommentsByTriggerTime(comments, null)).toEqual(comments);
+      expect(filterCommentsByTriggerTime(comments, null)).toEqual([]);
+      expect(filterCommentsByTriggerTime(comments, undefined)).toEqual([]);
+      expect(filterCommentsByTriggerTime(comments, '')).toEqual([]);
+    });
+
+    test('fails closed when the trigger time is malformed', () => {
+      const comments = [{ createdAt: '2025-01-01T10:00:00Z', body: 'Comment 1' }];
+      expect(filterCommentsByTriggerTime(comments, 'not-a-date')).toEqual([]);
+      expect(filterCommentsByTriggerTime(comments, {})).toEqual([]);
     });
 
     test('filters out comments created at or after trigger time', () => {
@@ -995,7 +1090,9 @@ Line 2 of custom`;
       expect(result).toBeNull();
     });
 
-    test('fetches PR files when PR context available', async () => {
+    const okCommit = { data: { commit: { committer: { date: '2024-12-31T00:00:00Z' } } } };
+
+    test('pins the diff to the webhook head SHA without a live PR read', async () => {
       const mockFiles = [
         {
           filename: 'test.js',
@@ -1007,11 +1104,14 @@ Line 2 of custom`;
       ];
 
       const github = require('@actions/github');
+      const pullsGet = jest.fn();
+      const compareCommits = jest.fn().mockResolvedValue({
+        data: { total_commits: 1, files: mockFiles }
+      });
       github.getOctokit = jest.fn(() => ({
         rest: {
-          pulls: {
-            listFiles: jest.fn().mockResolvedValue({ data: mockFiles })
-          }
+          pulls: { get: pullsGet },
+          repos: { getCommit: jest.fn().mockResolvedValue(okCommit), compareCommits }
         }
       }));
 
@@ -1020,22 +1120,106 @@ Line 2 of custom`;
         repo: { owner: 'test-owner', repo: 'test-repo' },
         payload: {
           ...mockContext.payload,
-          pull_request: { number: 123 }
+          pull_request: { number: 123, head: { sha: 'headsha' }, base: { sha: 'basesha' } }
         }
       };
 
       const result = await fetchPRDiffContext(prContext, 'test-token');
-      expect(result).toHaveLength(1);
-      expect(result[0].filename).toBe('test.js');
-      expect(result[0].status).toBe('modified');
+      expect(result.headSha).toBe('headsha');
+      expect(result.baseSha).toBe('basesha');
+      expect(result.files).toHaveLength(1);
+      expect(result.files[0].filename).toBe('test.js');
+      expect(result.truncated).toBe(false);
+      // The payload SHA is authoritative; no live lookup should be needed.
+      expect(pullsGet).not.toHaveBeenCalled();
+      expect(compareCommits).toHaveBeenCalledWith(
+        expect.objectContaining({ base: 'basesha', head: 'headsha' })
+      );
+    });
+
+    test('resolves the head SHA once when the payload has none', async () => {
+      const github = require('@actions/github');
+      const compareCommits = jest.fn().mockResolvedValue({
+        data: { total_commits: 1, files: [] }
+      });
+      github.getOctokit = jest.fn(() => ({
+        rest: {
+          pulls: {
+            get: jest.fn().mockResolvedValue({
+              data: { head: { sha: 'resolvedhead' }, base: { sha: 'resolvedbase' } }
+            })
+          },
+          repos: { getCommit: jest.fn().mockResolvedValue(okCommit), compareCommits }
+        }
+      }));
+
+      const prContext = {
+        ...mockContext,
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: {
+          ...mockContext.payload,
+          pull_request: null,
+          issue: { number: 123, pull_request: { url: 'https://example.invalid/pull/123' } }
+        }
+      };
+
+      const result = await fetchPRDiffContext(prContext, 'test-token');
+      expect(result.headSha).toBe('resolvedhead');
+      expect(compareCommits).toHaveBeenCalledWith(
+        expect.objectContaining({ base: 'resolvedbase', head: 'resolvedhead' })
+      );
+    });
+
+    test('fails closed when the event supplies no valid cutoff', async () => {
+      const github = require('@actions/github');
+      const compareCommits = jest.fn();
+      github.getOctokit = jest.fn(() => ({
+        rest: {
+          pulls: { get: jest.fn() },
+          repos: { getCommit: jest.fn(), compareCommits }
+        }
+      }));
+
+      const prContext = {
+        ...mockContext,
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: {
+          ...mockContext.payload,
+          comment: { body: '@awsapm test', user: { login: 'u' } }, // no created_at
+          pull_request: { number: 123, head: { sha: 'h' }, base: { sha: 'b' } }
+        }
+      };
+
+      expect(await fetchPRDiffContext(prContext, 'test-token')).toBeNull();
+      expect(compareCommits).not.toHaveBeenCalled();
+    });
+
+    test('returns null when the head/base SHA cannot be resolved', async () => {
+      const github = require('@actions/github');
+      github.getOctokit = jest.fn(() => ({
+        rest: {
+          pulls: { get: jest.fn().mockResolvedValue({ data: {} }) },
+          repos: { getCommit: jest.fn(), compareCommits: jest.fn() }
+        }
+      }));
+
+      const prContext = {
+        ...mockContext,
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: { ...mockContext.payload, pull_request: { number: 123 } }
+      };
+
+      expect(await fetchPRDiffContext(prContext, 'test-token')).toBeNull();
     });
 
     test('handles API errors gracefully', async () => {
       const github = require('@actions/github');
       github.getOctokit = jest.fn(() => ({
         rest: {
-          pulls: {
-            listFiles: jest.fn().mockRejectedValue(new Error('API Error'))
+          pulls: { get: jest.fn() },
+          repos: {
+            getCommit: jest.fn().mockResolvedValue(okCommit),
+            compareCommits: jest.fn().mockRejectedValue(new Error('API Error'))
           }
         }
       }));
@@ -1045,7 +1229,7 @@ Line 2 of custom`;
         repo: { owner: 'test-owner', repo: 'test-repo' },
         payload: {
           ...mockContext.payload,
-          pull_request: { number: 123 }
+          pull_request: { number: 123, head: { sha: 'h' }, base: { sha: 'b' } }
         }
       };
 
@@ -1058,7 +1242,13 @@ Line 2 of custom`;
       github.getOctokit = jest.fn(() => ({
         rest: {
           pulls: {
-            listFiles: jest.fn().mockResolvedValue({ data: [] })
+            get: jest.fn().mockResolvedValue({
+              data: { head: { sha: 'h' }, base: { sha: 'b' } }
+            })
+          },
+          repos: {
+            getCommit: jest.fn().mockResolvedValue(okCommit),
+            compareCommits: jest.fn().mockResolvedValue({ data: { total_commits: 0, files: [] } })
           }
         }
       }));
@@ -1077,7 +1267,7 @@ Line 2 of custom`;
       };
 
       const result = await fetchPRDiffContext(prContext, 'test-token');
-      expect(result).toEqual([]);
+      expect(result.files).toEqual([]);
     });
   });
 });

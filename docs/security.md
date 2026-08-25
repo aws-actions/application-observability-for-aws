@@ -6,6 +6,7 @@ This document outlines key security considerations when using the Application ob
 
 - This action can only be triggered by users with **write access or above**.
 - The `allowed_non_write_users` parameter can be used to grant access to users who don't have write permissions. **⚠️ WARNING: this is a significant security risk and should be used with extreme caution** as it bypasses the security mechanism that prevents outside users from triggering this action.
+- `allowed_non_write_users` also accepts the single value `*`, which allows **any** GitHub user to trigger the action. That removes the trust boundary entirely: every protection described under [Prompt Injection Risks](#️-prompt-injection-risks) assumes a trusted user authorized the run, and with `*` nobody did. Do not use it on a public repository.
 - Each invocation of the action is scoped to the repository that it is triggered in.
 
 ## GitHub Token Permissions
@@ -30,7 +31,25 @@ The IAM permissions set needed for this action is provided in the [Required Perm
 
 ## ⚠️ Prompt Injection Risks
 
-This action processes user-provided content (issues, PRs, comments) using AI. **Malicious actors may attempt to inject hidden instructions** through HTML comments, markdown hidden text, or zero-width Unicode characters to manipulate the AI's behavior. To mitigate this risk, the action includes built-in protections: comment timestamp filtering (excludes comments created or edited after the triggering event, across `issues`, `issue_comment`, and pull request review events), repository scope restriction (AI analyzes target repository only), least-privilege tooling (file access is scoped to the repository workspace; broad shell file/enumeration commands are not granted), programmatic secret redaction (credential material is stripped from results before they are posted), and output sanitization before posting to GitHub. The timestamp filter fails closed: if a triggering event cannot supply a trusted cutoff, live conversation comments are omitted rather than included. The generated MCP credential configuration is written outside the repository workspace with owner-only permissions, so it is not reachable by the agent's workspace-scoped tools.
+This action processes user-provided content (issues, PRs, comments) using AI. **Malicious actors may attempt to inject hidden instructions** through HTML comments, markdown hidden text, or zero-width Unicode characters to manipulate the AI's behavior.
+
+Protections fall into two groups, and the difference matters when you assess your own risk.
+
+**Enforced in code.** These hold regardless of what the model decides to do:
+
+- **Trust-boundary binding.** Untrusted content is pinned to the state that existed when a trusted user authorized the run. Comments are filtered by the triggering event's timestamp across `issues`, `issue_comment`, and pull request review events. The PR diff is pinned to a single commit SHA — taken from the immutable webhook payload for `pull_request*` events — and is omitted entirely if the head commit is dated at or after the authorizing event. Both fail closed: with no trustworthy cutoff, the content is dropped rather than included.
+- **Least-privilege tooling.** File access is scoped to the repository workspace. `Bash`, `WebFetch` and `WebSearch` are denied explicitly via `disallowed_tools`, not merely left out of the allow list. Bash matters most: its arguments cannot be path-scoped, so any grant reaches every file the runner user can read.
+- **Credential placement.** The generated MCP configuration holds credentials and is written to the runner temp directory, outside the workspace the agent's file tools are scoped to. It is also mode `0600`, but that is hygiene for shared runners only — the agent runs as the same OS user, so the mode grants it nothing. The path scoping and the Bash denial are what keep the file out of reach.
+- **Secret redaction on the result.** Credential material is stripped before the result is posted. This is a backstop, not a boundary: it catches verbatim and base64-encoded values plus known credential shapes, but not a value the model transformed, and it only covers the comment channel — an agent holding the GitHub MCP write tools could commit instead.
+
+**Best-effort model instructions.** These are prompt text, and prompt text is exactly what an injection attack targets. Do not rely on them as controls:
+
+- Untrusted content is fenced in labelled sections with an instruction to treat it as data, never as instructions.
+- The agent is told to analyze only the target repository, not to output credentials, and never to write to the default branch. Nothing enforces the last one: the workflow grants `contents: write` and the agent holds GitHub MCP write tools.
+
+### Residual risk
+
+For `issue_comment` events on a pull request the webhook payload carries no head SHA, so it is resolved after authorization. The window between a maintainer commenting and that resolution cannot be closed from inside the action. The SHA that was analyzed is recorded in the prompt so the snapshot is auditable. To eliminate the window, trigger reviews from `pull_request_review` events, whose payload carries the SHA.
 
 ### Mitigation Best Practices
 

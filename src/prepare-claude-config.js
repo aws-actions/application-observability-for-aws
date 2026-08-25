@@ -58,21 +58,29 @@ async function run() {
     core.info(`MCP servers configured: ${serverCount}`);
 
     // Write MCP config to JSON file.
-    // This file contains credential material for the MCP servers, so:
-    //  - it is written to the runner temp dir (OUTPUT_DIR), OUTSIDE the repo
-    //    workspace, which the agent's path-scoped Read/Grep/Glob tools cannot
-    //    reach, and the agent is not granted broad shell read commands; and
-    //  - it is created with owner-only (0600) permissions as defense in depth.
+    // This file contains credential material for the MCP servers. What keeps it
+    // away from the agent is that it lives in the runner temp dir (OUTPUT_DIR),
+    // outside the repo workspace that the agent's path-scoped file tools are
+    // limited to, plus the explicit Bash denial. The 0600 mode does NOT
+    // contribute to that: the agent runs as the same OS user that writes this
+    // file, so the mode only excludes other users on the runner. It is kept as
+    // hygiene for self-hosted/shared runners, nothing more.
     const mcpConfigFile = path.join(outputDir, 'mcp-servers.json');
     fs.writeFileSync(mcpConfigFile, JSON.stringify(mcpConfig, null, 2), { mode: 0o600 });
+    // writeFileSync's `mode` only applies when it creates the file; on an
+    // existing path (RUNNER_TEMP persists across steps, and is reused on
+    // self-hosted runners) the old, possibly looser mode survives. chmod always.
+    fs.chmodSync(mcpConfigFile, 0o600);
 
     // Get allowed tools for Claude
     const allowedTools = mcpManager.getAllowedToolsForClaude();
+    const disallowedTools = mcpManager.getDisallowedToolsForClaude();
 
     // Set outputs for claude-code-base-action
     core.setOutput('prompt_file', promptFile);
     core.setOutput('mcp_config_file', mcpConfigFile);
     core.setOutput('allowed_tools', allowedTools);
+    core.setOutput('disallowed_tools', disallowedTools);
 
     core.info('Configuration prepared successfully');
 

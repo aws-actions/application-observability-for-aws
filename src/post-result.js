@@ -7,9 +7,14 @@ const fs = require('fs');
 /**
  * Redact credential material from text before it is posted publicly to GitHub.
  *
- * Defense-in-depth: the investigation result is written to a public issue/PR
- * comment. Even with prompt-injection surface constrained, the agent's output
- * should never echo secrets (e.g. AWS keys, GitHub tokens) back into the repo.
+ * Defense-in-depth, not a control. The investigation result is written to a public
+ * issue/PR comment, so the agent's output should never echo secrets (e.g. AWS
+ * keys, GitHub tokens) back into the repo. What this catches: verbatim values from
+ * the environment, their base64 forms, and well-known credential shapes. What it
+ * cannot catch: a value the agent transformed (hex, chunked, reordered, described
+ * in prose). It also only covers this one channel - an agent holding the GitHub
+ * MCP write tools can commit to a branch instead of commenting. Treat the tool
+ * scoping as the boundary and this as a backstop.
  */
 function redactSecrets(text) {
   if (!text) return text;
@@ -26,11 +31,23 @@ function redactSecrets(text) {
     'AWS_SESSION_TOKEN',
     'GITHUB_TOKEN',
     'GITHUB_PERSONAL_ACCESS_TOKEN',
+    // Both are supported auth paths for claude-code-base-action when a caller
+    // uses the Anthropic API instead of Bedrock.
+    'ANTHROPIC_API_KEY',
+    'CLAUDE_CODE_OAUTH_TOKEN',
   ];
   for (const name of secretEnvVars) {
     const value = process.env[name];
     if (value && value.length >= 12) {
       redacted = redacted.split(value).join(PLACEHOLDER);
+      // Also catch the base64 form. actions/checkout writes the GITHUB_TOKEN into
+      // .git/config as "AUTHORIZATION: basic base64(x-access-token:<token>)", and
+      // any agent that reads a config file is likely to echo the encoded value
+      // rather than the raw one.
+      redacted = redacted.split(Buffer.from(value).toString('base64')).join(PLACEHOLDER);
+      redacted = redacted
+        .split(Buffer.from(`x-access-token:${value}`).toString('base64'))
+        .join(PLACEHOLDER);
     }
   }
 
@@ -39,7 +56,9 @@ function redactSecrets(text) {
     /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ABIA|ACCA)[0-9A-Z]{16}\b/g, // AWS access key IDs
     /\bgh[opsur]_[A-Za-z0-9]{20,}\b/g,        // GitHub tokens (ghp_/gho_/ghs_/ghu_/ghr_)
     /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,      // GitHub fine-grained PATs
+    /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g,         // Anthropic API keys
     /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----/g, // PEM private keys
+    /\bAUTHORIZATION:\s*basic\s+[A-Za-z0-9+/=]{20,}/gi, // git extraheader credentials
   ];
   for (const re of patterns) {
     redacted = redacted.replace(re, PLACEHOLDER);
@@ -49,15 +68,32 @@ function redactSecrets(text) {
 }
 
 /**
+ * Longest a result can be and still plausibly be nothing but a placeholder.
+ * A real investigation result is far longer than this.
+ */
+const PLACEHOLDER_MAX_LENGTH = 400;
+
+/**
  * Detect an interim "waiting on a background/exploration agent" placeholder that
  * some models emit when they delegate work to a background subagent and end the
  * main turn before the real answer is ready.
+ *
+ * Deliberately narrow. A true positive discards the entire result, and the result
+ * is influenced by issue and comment text, so a loose match lets anyone suppress
+ * an investigation by getting the phrase echoed - and also eats legitimate results
+ * that merely discuss background agents. So: the whole result must be short enough
+ * to be nothing but a placeholder, and the phrase must appear at the start rather
+ * than anywhere in the body.
  */
 function isBackgroundAgentPlaceholder(text) {
   if (!text) return false;
-  const t = text.toLowerCase();
-  return /waiting on the background\b[\s\S]*\bagent\b/.test(t) ||
-         t.includes('background exploration agent');
+
+  const trimmed = text.trim();
+  if (trimmed.length > PLACEHOLDER_MAX_LENGTH) return false;
+
+  const t = trimmed.toLowerCase();
+  return /^\W*waiting on the background\b[^.\n]*\bagent\b/.test(t) ||
+         /^\W*waiting (?:for|on)\b[^.\n]*\bbackground exploration agent\b/.test(t);
 }
 
 /**

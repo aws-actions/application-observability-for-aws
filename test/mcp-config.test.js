@@ -284,11 +284,32 @@ describe('MCPConfigManager', () => {
 
       const allowedTools = manager.getAllowedToolsForClaude();
 
-      expect(allowedTools).toContain('Read(//workspace/repo/**)');
-      expect(allowedTools).toContain('Edit(//workspace/repo/**)');
-      expect(allowedTools).toContain('Glob(//workspace/repo/**)');
-      expect(allowedTools).toContain('Grep(//workspace/repo/**)');
-      expect(allowedTools).toContain('LS');
+      expect(allowedTools).toContain('Read(/workspace/repo/**)');
+      expect(allowedTools).toContain('Edit(/workspace/repo/**)');
+      expect(allowedTools).toContain('Glob(/workspace/repo/**)');
+      expect(allowedTools).toContain('Grep(/workspace/repo/**)');
+      // LS must carry the same scope as every other file tool: unscoped, it lets
+      // the agent enumerate the runner temp dir holding the MCP credential config.
+      expect(allowedTools).toContain('LS(/workspace/repo/**)');
+      expect(allowedTools.split(',')).not.toContain('LS');
+    });
+
+    test('emits single-slash absolute path scopes', () => {
+      // GITHUB_WORKSPACE is already absolute, so a leading "/" in the template
+      // produced "//workspace/...". These patterns are the whole file-access
+      // boundary now that Bash is denied, so they must be unambiguous.
+      delete process.env.AWS_ACCESS_KEY_ID;
+      delete process.env.AWS_SECRET_ACCESS_KEY;
+      delete process.env.GITHUB_TOKEN;
+      process.env.GITHUB_WORKSPACE = '/workspace/repo';
+
+      const allowedTools = manager.getAllowedToolsForClaude();
+
+      expect(allowedTools).not.toContain('(//');
+      for (const entry of allowedTools.split(',')) {
+        const scope = entry.match(/^[A-Za-z]+\((.*)\)$/)?.[1];
+        if (scope) expect(scope.startsWith('/workspace/repo/')).toBe(true);
+      }
     });
 
     test('does NOT grant broad unscoped shell file/enumeration commands', () => {
@@ -314,6 +335,39 @@ describe('MCPConfigManager', () => {
       ]) {
         expect(allowedTools).not.toContain(forbidden);
       }
+      expect(allowedTools).not.toContain('Bash');
+    });
+
+    describe('getDisallowedToolsForClaude', () => {
+      test('denies Bash explicitly rather than relying on default-deny', () => {
+        // Omitting a tool from the allow list only relies on the CLI defaulting to
+        // deny in headless mode. Bash cannot be path-scoped by argument, so any
+        // grant reaches every file the runner user can read, including the
+        // generated MCP credential config. It must be denied outright.
+        const disallowed = manager.getDisallowedToolsForClaude().split(',');
+        expect(disallowed).toContain('Bash');
+      });
+
+      test('denies the network egress tools', () => {
+        const disallowed = manager.getDisallowedToolsForClaude().split(',');
+        expect(disallowed).toContain('WebFetch');
+        expect(disallowed).toContain('WebSearch');
+      });
+
+      test('does not deny anything the allow list grants', () => {
+        process.env.AWS_ACCESS_KEY_ID = 'AKIATEST123';
+        process.env.AWS_SECRET_ACCESS_KEY = 'secretkey';
+        process.env.GITHUB_TOKEN = 'ghp_test123';
+        process.env.GITHUB_WORKSPACE = '/workspace/repo';
+
+        const allowedNames = manager.getAllowedToolsForClaude()
+          .split(',')
+          .map(t => t.replace(/\(.*$/, ''));
+
+        for (const denied of manager.getDisallowedToolsForClaude().split(',')) {
+          expect(allowedNames).not.toContain(denied);
+        }
+      });
     });
 
     test('includes Application Signals tools when AWS credentials present', () => {
@@ -325,7 +379,7 @@ describe('MCPConfigManager', () => {
       const allowedTools = manager.getAllowedToolsForClaude();
 
       expect(allowedTools).toContain('mcp__applicationsignals__list_monitored_services');
-      expect(allowedTools).toContain('Read(//workspace/repo/**)');
+      expect(allowedTools).toContain('Read(/workspace/repo/**)');
     });
 
     test('includes CloudWatch tools when enabled and AWS credentials present', () => {
@@ -350,7 +404,7 @@ describe('MCPConfigManager', () => {
       const allowedTools = manager.getAllowedToolsForClaude();
 
       expect(allowedTools).toContain('mcp__github__create_pull_request');
-      expect(allowedTools).toContain('Read(//workspace/repo/**)');
+      expect(allowedTools).toContain('Read(/workspace/repo/**)');
     });
 
     test('includes all tools when all credentials present', () => {
@@ -363,7 +417,7 @@ describe('MCPConfigManager', () => {
       const allowedTools = manager.getAllowedToolsForClaude();
 
       // Should include base tools
-      expect(allowedTools).toContain('Read(//workspace/repo/**)');
+      expect(allowedTools).toContain('Read(/workspace/repo/**)');
       // Should include Application Signals tools
       expect(allowedTools).toContain('mcp__applicationsignals__list_monitored_services');
       // Should include CloudWatch tools
@@ -381,8 +435,8 @@ describe('MCPConfigManager', () => {
       const allowedTools = manager.getAllowedToolsForClaude();
       const cwd = process.cwd();
 
-      expect(allowedTools).toContain(`Read(/${cwd}/**)`);
-      expect(allowedTools).toContain('LS');
+      expect(allowedTools).toContain(`Read(${cwd}/**)`);
+      expect(allowedTools).toContain(`LS(${cwd}/**)`);
     });
 
     test('returns comma-separated string', () => {
