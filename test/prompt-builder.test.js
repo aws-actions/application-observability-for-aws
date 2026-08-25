@@ -419,6 +419,30 @@ Line 2 of custom`;
       expect(getEventTriggerTime(context)).toBe('2025-01-03T00:00:00Z');
     });
 
+    test('returns issue updated_at for issues event', () => {
+      const context = {
+        eventName: 'issues',
+        payload: {
+          issue: {
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-04T00:00:00Z'
+          }
+        }
+      };
+      // updated_at reflects the open/assign/edit moment that authorized the run
+      expect(getEventTriggerTime(context)).toBe('2025-01-04T00:00:00Z');
+    });
+
+    test('falls back to issue created_at for issues event without updated_at', () => {
+      const context = {
+        eventName: 'issues',
+        payload: {
+          issue: { created_at: '2025-01-01T00:00:00Z' }
+        }
+      };
+      expect(getEventTriggerTime(context)).toBe('2025-01-01T00:00:00Z');
+    });
+
     test('returns undefined for unknown event types', () => {
       const context = {
         eventName: 'push',
@@ -739,6 +763,207 @@ Line 2 of custom`;
 
       const result = await fetchGitHubConversation(mockContext, 'test-token');
       expect(result).toEqual([]);
+    });
+
+    test('excludes comments created or edited after an issues event (TOCTOU)', async () => {
+      // Regression for V2337707056: issues.opened/assigned/edited must bind
+      // fetched comments to the authorized event snapshot, not live state.
+      const eventTime = '2026-08-08T12:00:00Z';
+      const mockComments = [
+        {
+          user: { login: 'external-commenter' },
+          created_at: '2026-08-08T11:59:00Z',
+          updated_at: '2026-08-08T11:59:00Z',
+          body: 'Legitimate pre-approval comment'
+        },
+        {
+          user: { login: 'external-commenter' },
+          created_at: '2026-08-08T12:00:10Z', // created AFTER the trusted event
+          updated_at: '2026-08-08T12:00:10Z',
+          body: 'LATE_CREATED_INJECTION'
+        },
+        {
+          user: { login: 'external-commenter' },
+          created_at: '2026-08-08T11:58:00Z',
+          updated_at: '2026-08-08T12:00:10Z', // edited AFTER the trusted event
+          body: 'LATE_EDITED_INJECTION'
+        }
+      ];
+
+      const github = require('@actions/github');
+      github.getOctokit = jest.fn(() => ({
+        rest: {
+          issues: {
+            listComments: jest.fn().mockResolvedValue({ data: mockComments })
+          }
+        }
+      }));
+
+      const issuesContext = {
+        eventName: 'issues',
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: {
+          action: 'assigned',
+          issue: {
+            number: 77,
+            created_at: eventTime,
+            updated_at: eventTime
+          }
+        }
+      };
+
+      const result = await fetchGitHubConversation(issuesContext, 'test-token');
+      const bodies = result.map(c => c.body);
+      expect(bodies).toEqual(['Legitimate pre-approval comment']);
+      expect(bodies).not.toContain('LATE_CREATED_INJECTION');
+      expect(bodies).not.toContain('LATE_EDITED_INJECTION');
+    });
+
+    test('fails closed and omits live comments when no valid trigger time', async () => {
+      const listComments = jest.fn().mockResolvedValue({
+        data: [
+          {
+            user: { login: 'user1' },
+            created_at: '2025-01-01T10:00:00Z',
+            updated_at: '2025-01-01T10:00:00Z',
+            body: 'Should not be imported'
+          }
+        ]
+      });
+
+      const github = require('@actions/github');
+      github.getOctokit = jest.fn(() => ({
+        rest: { issues: { listComments } }
+      }));
+
+      // issues event whose payload carries no issue timestamps -> no cutoff
+      const issuesContext = {
+        eventName: 'issues',
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: { action: 'assigned', issue: { number: 77 } }
+      };
+
+      const result = await fetchGitHubConversation(issuesContext, 'test-token');
+      expect(result).toEqual([]);
+      expect(listComments).not.toHaveBeenCalled();
+    });
+
+    test('fails closed when the issues cutoff timestamp is malformed', async () => {
+      const listComments = jest.fn().mockResolvedValue({
+        data: [
+          {
+            user: { login: 'user1' },
+            created_at: '2025-01-01T10:00:00Z',
+            updated_at: '2025-01-01T10:00:00Z',
+            body: 'Should not be imported'
+          }
+        ]
+      });
+
+      const github = require('@actions/github');
+      github.getOctokit = jest.fn(() => ({
+        rest: { issues: { listComments } }
+      }));
+
+      const issuesContext = {
+        eventName: 'issues',
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: { action: 'assigned', issue: { number: 77, updated_at: 'not-a-real-date' } }
+      };
+
+      const result = await fetchGitHubConversation(issuesContext, 'test-token');
+      expect(result).toEqual([]);
+      expect(listComments).not.toHaveBeenCalled();
+    });
+
+    test.each(['opened', 'assigned', 'edited'])(
+      'issues.%s keeps pre-event comments and drops late-created/late-edited ones',
+      async (action) => {
+        const eventTime = '2026-08-08T12:00:00Z';
+        const mockComments = [
+          {
+            user: { login: 'external' },
+            created_at: '2026-08-08T11:59:00Z',
+            updated_at: '2026-08-08T11:59:00Z',
+            body: 'PRE_EVENT_LEGIT'
+          },
+          {
+            user: { login: 'external' },
+            created_at: '2026-08-08T12:00:10Z',
+            updated_at: '2026-08-08T12:00:10Z',
+            body: 'LATE_CREATED'
+          },
+          {
+            user: { login: 'external' },
+            created_at: '2026-08-08T11:58:00Z',
+            updated_at: '2026-08-08T12:00:10Z',
+            body: 'LATE_EDITED'
+          }
+        ];
+
+        const github = require('@actions/github');
+        github.getOctokit = jest.fn(() => ({
+          rest: {
+            issues: {
+              listComments: jest.fn().mockResolvedValue({ data: mockComments })
+            }
+          }
+        }));
+
+        const issuesContext = {
+          eventName: 'issues',
+          repo: { owner: 'test-owner', repo: 'test-repo' },
+          payload: {
+            action,
+            issue: { number: 77, created_at: eventTime, updated_at: eventTime }
+          }
+        };
+
+        const bodies = (await fetchGitHubConversation(issuesContext, 'test-token')).map(c => c.body);
+        expect(bodies).toEqual(['PRE_EVENT_LEGIT']);
+        expect(bodies).not.toContain('LATE_CREATED');
+        expect(bodies).not.toContain('LATE_EDITED');
+      }
+    );
+
+    test('issue_comment path still rejects a comment created after the trigger', async () => {
+      const mockComments = [
+        {
+          user: { login: 'external' },
+          created_at: '2025-01-01T09:00:00Z',
+          updated_at: '2025-01-01T09:00:00Z',
+          body: 'BEFORE_TRIGGER'
+        },
+        {
+          user: { login: 'external' },
+          created_at: '2025-01-01T12:00:10Z',
+          updated_at: '2025-01-01T12:00:10Z',
+          body: 'AFTER_TRIGGER'
+        }
+      ];
+
+      const github = require('@actions/github');
+      github.getOctokit = jest.fn(() => ({
+        rest: {
+          issues: {
+            listComments: jest.fn().mockResolvedValue({ data: mockComments })
+          }
+        }
+      }));
+
+      const issueCommentContext = {
+        eventName: 'issue_comment',
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: {
+          action: 'created',
+          issue: { number: 1 },
+          comment: { created_at: '2025-01-01T12:00:00Z' }
+        }
+      };
+
+      const bodies = (await fetchGitHubConversation(issueCommentContext, 'test-token')).map(c => c.body);
+      expect(bodies).toEqual(['BEFORE_TRIGGER']);
+      expect(bodies).not.toContain('AFTER_TRIGGER');
     });
   });
 

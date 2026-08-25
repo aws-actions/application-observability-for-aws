@@ -120,7 +120,8 @@ describe('prepare-claude-config', () => {
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(
         expect.stringContaining('/tmp/runner/awsapm-prompts/mcp-servers.json'),
-        expect.any(String)
+        expect.any(String),
+        { mode: 0o600 }
       );
     });
 
@@ -141,7 +142,37 @@ describe('prepare-claude-config', () => {
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(
         expect.stringContaining('mcp-servers.json'),
-        JSON.stringify(mockConfig, null, 2)
+        JSON.stringify(mockConfig, null, 2),
+        { mode: 0o600 }
+      );
+    });
+  });
+
+  describe('background subagent default', () => {
+    it('exports CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=1 when not already set', async () => {
+      process.env.OUTPUT_DIR = '/tmp/test-output';
+      process.env.INPUT_PROMPT_FILE = '/tmp/test-prompt.txt';
+      delete process.env.CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS;
+
+      fs.existsSync.mockReturnValue(true);
+
+      await run();
+
+      expect(core.exportVariable).toHaveBeenCalledWith('CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS', '1');
+    });
+
+    it('does not override an explicit CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS value', async () => {
+      process.env.OUTPUT_DIR = '/tmp/test-output';
+      process.env.INPUT_PROMPT_FILE = '/tmp/test-prompt.txt';
+      process.env.CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS = '0';
+
+      fs.existsSync.mockReturnValue(true);
+
+      await run();
+
+      expect(core.exportVariable).not.toHaveBeenCalledWith(
+        'CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS',
+        expect.anything()
       );
     });
   });
