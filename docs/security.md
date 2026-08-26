@@ -37,7 +37,7 @@ Protections fall into two groups, and the difference matters when you assess you
 
 **Enforced in code.** These hold regardless of what the model decides to do:
 
-- **Trust-boundary binding.** Untrusted content is pinned to the state that existed when a trusted user authorized the run. Comments are filtered by the triggering event's timestamp across `issues`, `issue_comment`, and pull request review events. The PR diff is pinned to a single commit SHA — taken from the immutable webhook payload for `pull_request*` events — and is omitted entirely if the head commit is dated at or after the authorizing event. Both fail closed: with no trustworthy cutoff, the content is dropped rather than included.
+- **Trust-boundary binding.** Untrusted content is pinned to the state that existed when a trusted user authorized the run. Comments are filtered by the triggering event's timestamp across `issues`, `issue_comment`, and pull request review events. The PR diff is pinned to a single commit SHA — read straight from the webhook payload for `pull_request_review_comment`, resolved once for `issue_comment` on a PR — and is omitted if the head commit is dated at or after the authorizing event. Both fail closed: with no trustworthy cutoff, the content is dropped rather than included. See [Residual risk](#residual-risk) for what this does not cover.
 - **Least-privilege tooling.** File access is scoped to the repository workspace. `Bash`, `WebFetch` and `WebSearch` are denied explicitly via `disallowed_tools`, not merely left out of the allow list. Bash matters most: its arguments cannot be path-scoped, so any grant reaches every file the runner user can read.
 - **Credential placement.** The generated MCP configuration holds credentials and is written to the runner temp directory, outside the workspace the agent's file tools are scoped to. It is also mode `0600`, but that is hygiene for shared runners only — the agent runs as the same OS user, so the mode grants it nothing. The path scoping and the Bash denial are what keep the file out of reach.
 - **Secret redaction on the result.** Credential material is stripped before the result is posted. This is a backstop, not a boundary: it catches verbatim and base64-encoded values plus known credential shapes, but not a value the model transformed, and it only covers the comment channel — an agent holding the GitHub MCP write tools could commit instead.
@@ -49,7 +49,9 @@ Protections fall into two groups, and the difference matters when you assess you
 
 ### Residual risk
 
-For `issue_comment` events on a pull request the webhook payload carries no head SHA, so it is resolved after authorization. The window between a maintainer commenting and that resolution cannot be closed from inside the action. The SHA that was analyzed is recorded in the prompt so the snapshot is auditable. To eliminate the window, trigger reviews from `pull_request_review` events, whose payload carries the SHA.
+For `issue_comment` events on a pull request the webhook payload carries no head SHA, so it is resolved after authorization. The window between a maintainer commenting and that resolution cannot be closed from inside the action. The SHA that was analyzed is recorded in the prompt so the snapshot is auditable. To eliminate the window, trigger PR reviews from `pull_request_review_comment` events instead: that payload carries the full `pull_request` object, so the head SHA is an immutable part of the authorizing event and no live lookup happens at all.
+
+The head-commit date check that rejects a diff pushed after authorization reads the commit's own committer date. Git commit dates are supplied by the committer's machine, so a determined attacker can backdate a late push, and a contributor with a fast clock can have a legitimate commit rejected. It is a cheap tripwire that fails closed, not a boundary; the SHA pinning is what provides the guarantee.
 
 ### Mitigation Best Practices
 

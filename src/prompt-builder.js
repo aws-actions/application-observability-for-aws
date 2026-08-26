@@ -178,8 +178,16 @@ function formatConversationHistory(comments) {
 }
 
 /**
- * Maximum files GitHub's compare API returns in one response. Beyond this the
- * diff is truncated, and the prompt says so rather than silently under-reporting.
+ * Hard cap on files in a single GitHub compare response. This is the API's own
+ * limit, not ours: `GET /repos/{o}/{r}/compare/{base}...{head}` returns at most
+ * 300 entries in `files` and gives no total count, so a response of exactly 300
+ * is the only available truncation signal.
+ *
+ * Trade-off worth knowing: `pulls.listFiles` paginates to 3000 files, so it can
+ * see more than this on a very large PR. It cannot be pinned to a SHA, which is
+ * the property this code exists to provide, so the cap is accepted and disclosed.
+ * (The previous implementation called `listFiles` without pagination and silently
+ * saw only the first 30 files.)
  */
 const MAX_DIFF_FILES = 300;
 
@@ -192,13 +200,25 @@ const MAX_DIFF_FILES = 300;
  * text lands verbatim in the agent prompt. So the diff is bound to a single
  * commit SHA instead of being read from live PR state:
  *
- *  - For `pull_request*` events the SHA comes from the immutable webhook payload
- *    (`pull_request.head.sha`), which the author cannot change after the fact.
- *  - For `issue_comment` on a PR the payload carries no head SHA, so it is
- *    resolved once and every subsequent read is pinned to it. That leaves a
- *    residual window between authorization and this resolution which cannot be
- *    closed from inside the action; the SHA is therefore surfaced in the prompt
- *    so the analyzed snapshot is auditable.
+ *  - `pull_request_review_comment` carries the full `pull_request` object in its
+ *    webhook payload, so `pull_request.head.sha` is an immutable snapshot and no
+ *    live read is needed. This is the only trigger with no exposure window.
+ *  - `issue_comment` on a PR carries no head SHA, so it is resolved once and
+ *    every subsequent read is pinned to it. That leaves a residual window between
+ *    authorization and this resolution which cannot be closed from inside the
+ *    action; the SHA is surfaced in the prompt so the snapshot is auditable.
+ *
+ * (`getEventTriggerTime` also handles `pull_request_review`, but `init.js` never
+ * sets a trigger for that event, so it does not reach this code today.)
+ *
+ * On the base endpoint: `pull_request.base.sha` is used rather than the base
+ * branch name, so both ends of the comparison are immutable and the exact diff
+ * can be reproduced later. Three-dot compare derives the merge base from it,
+ * which equals the merge base against the current branch tip in the normal case.
+ * They diverge only when the PR author merged the base branch into their branch:
+ * the diff is then larger than GitHub's "Files changed" view by those base-branch
+ * commits. That extra content comes from the protected base branch, so it is
+ * maintainer-authored, not a new injection surface.
  *
  * Returns null when there is no PR context or no trustworthy diff to report.
  */
@@ -279,12 +299,14 @@ async function fetchPRDiffContext(context, githubToken) {
     // Pin the file list to the resolved SHAs. `pulls.listFiles` always returns
     // the diff of live PR state, so it cannot be pinned; compareCommits uses
     // three-dot (merge-base) semantics and matches the PR "Files changed" view.
+    // No per_page here: on this endpoint it paginates commits, not files, and the
+    // max accepted value is 100. The files array is capped at MAX_DIFF_FILES by
+    // the API regardless.
     const { data: comparison } = await octokit.rest.repos.compareCommits({
       owner,
       repo,
       base: baseSha,
       head: headSha,
-      per_page: MAX_DIFF_FILES,
     });
 
     const allFiles = comparison.files || [];
@@ -296,12 +318,19 @@ async function fetchPRDiffContext(context, githubToken) {
       patch: file.patch
     }));
 
-    return {
-      headSha,
-      baseSha,
-      files,
-      truncated: allFiles.length > files.length || comparison.total_commits > MAX_DIFF_FILES
-    };
+    // The API reports no total, so hitting the cap exactly is the only signal
+    // that files were dropped. It can false-positive on a PR touching exactly
+    // MAX_DIFF_FILES files, which is the safe direction: it over-warns rather
+    // than presenting a partial diff as complete.
+    const truncated = files.length >= MAX_DIFF_FILES;
+    if (truncated) {
+      core.warning(
+        `PR #${prNumber} diff hit the ${MAX_DIFF_FILES}-file compare limit; ` +
+        `the agent is seeing a partial change set.`
+      );
+    }
+
+    return { headSha, baseSha, files, truncated };
   } catch (error) {
     core.error(`Could not fetch PR changes: ${error.message}`);
     return null;

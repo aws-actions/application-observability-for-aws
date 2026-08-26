@@ -436,7 +436,10 @@ Line 2 of custom`;
       expect(compareCommits).not.toHaveBeenCalled();
     });
 
-    test('marks a truncated diff instead of silently under-reporting', async () => {
+    // GitHub's compare endpoint caps `files` at 300 and reports no total, so a
+    // full-length response is the only truncation signal available. Mocking 301
+    // files would test a response the API cannot produce.
+    const mockDiffOfSize = (n) => {
       const github = require('@actions/github');
       github.getOctokit = jest.fn(() => ({
         rest: {
@@ -447,8 +450,8 @@ Line 2 of custom`;
             }),
             compareCommits: jest.fn().mockResolvedValue({
               data: {
-                total_commits: 5000,
-                files: Array.from({ length: 301 }, (_, i) => ({
+                total_commits: 1,
+                files: Array.from({ length: n }, (_, i) => ({
                   filename: `f${i}.js`, status: 'modified', additions: 1, deletions: 0, patch: '+x'
                 }))
               }
@@ -456,8 +459,7 @@ Line 2 of custom`;
           }
         }
       }));
-
-      const prContext = {
+      return {
         ...mockContext,
         repo: { owner: 'test-owner', repo: 'test-repo' },
         payload: {
@@ -465,9 +467,18 @@ Line 2 of custom`;
           pull_request: { number: 1, head: { sha: 'h' }, base: { sha: 'b' } }
         }
       };
+    };
 
-      const prompt = await createGeneralPrompt(prContext, mockRepoInfo, 'test', 'test-token');
+    test('marks a capped diff instead of presenting it as complete', async () => {
+      const prompt = await createGeneralPrompt(mockDiffOfSize(300), mockRepoInfo, 'test', 'test-token');
       expect(prompt).toContain('truncated');
+      expect(prompt).toContain('not the complete change set');
+    });
+
+    test('does not claim truncation for a diff under the cap', async () => {
+      const prompt = await createGeneralPrompt(mockDiffOfSize(299), mockRepoInfo, 'test', 'test-token');
+      expect(prompt).toContain('<changed_files>');
+      expect(prompt).not.toContain('not the complete change set');
     });
   });
 
@@ -1135,6 +1146,43 @@ Line 2 of custom`;
       expect(compareCommits).toHaveBeenCalledWith(
         expect.objectContaining({ base: 'basesha', head: 'headsha' })
       );
+    });
+
+    test('pull_request_review_comment needs no live lookup at all', async () => {
+      // This is the only trigger init.js fires for that carries the full
+      // pull_request object, so head.sha is part of the authorizing event and
+      // there is no window between authorization and resolution. (init.js has no
+      // pull_request_review branch, so that event never reaches this code.)
+      const github = require('@actions/github');
+      const pullsGet = jest.fn();
+      const compareCommits = jest.fn().mockResolvedValue({
+        data: { total_commits: 1, files: [] }
+      });
+      github.getOctokit = jest.fn(() => ({
+        rest: {
+          pulls: { get: pullsGet },
+          repos: { getCommit: jest.fn().mockResolvedValue(okCommit), compareCommits }
+        }
+      }));
+
+      const reviewCommentContext = {
+        ...mockContext,
+        eventName: 'pull_request_review_comment',
+        repo: { owner: 'test-owner', repo: 'test-repo' },
+        payload: {
+          ...mockContext.payload,
+          comment: { body: '@awsapm review', created_at: '2025-01-01T00:00:00Z', user: { login: 'm' } },
+          pull_request: {
+            number: 7,
+            head: { sha: 'payloadhead' },
+            base: { sha: 'payloadbase' }
+          }
+        }
+      };
+
+      const result = await fetchPRDiffContext(reviewCommentContext, 'test-token');
+      expect(result.headSha).toBe('payloadhead');
+      expect(pullsGet).not.toHaveBeenCalled();
     });
 
     test('resolves the head SHA once when the payload has none', async () => {
