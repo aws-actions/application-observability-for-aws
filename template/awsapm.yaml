@@ -38,6 +38,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Keep the GITHUB_TOKEN out of the workspace. With the default
+          # (persist-credentials: true) actions/checkout writes an
+          # "AUTHORIZATION: basic <base64>" extraheader into .git/config, which
+          # sits inside the very directory the agent's file tools are scoped to,
+          # and the base64 form defeats value-based redaction of the result. The
+          # action talks to GitHub through the REST API, so nothing here needs
+          # git credentials.
+          persist-credentials: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -74,6 +83,11 @@ jobs:
           prompt_file: ${{ steps.prepare.outputs.prompt_file }}
           mcp_config: ${{ steps.prepare.outputs.mcp_config_file }}
           allowed_tools: ${{ steps.prepare.outputs.allowed_tools }}
+          # Denies Bash/WebFetch/WebSearch explicitly rather than relying on the
+          # CLI defaulting to deny for tools that are merely absent from
+          # allowed_tools. Bash cannot be path-scoped by argument, so any grant
+          # reaches every file the runner user can read.
+          disallowed_tools: ${{ steps.prepare.outputs.disallowed_tools }}
 
       # Step 3: Post results back to GitHub issue/PR (reuse the same action)
       - name: Post Investigation Results

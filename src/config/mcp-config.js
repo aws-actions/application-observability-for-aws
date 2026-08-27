@@ -118,25 +118,30 @@ class MCPConfigManager {
   /**
    * Get allowed tools string for Claude CLI (with explicit tool names)
    * Note:
-   * - Bash tools are already allowed by claude-code-base-action
    * - MCP tools MUST be in allowed_tools for claude-code-base-action
    *   (autoApprove in MCP config file alone is not sufficient)
    * - claude-code-base-action does NOT support wildcards, must use explicit tool names
+   * - An allow-list entry is not a deny rule. Omitting a tool here relies on the
+   *   CLI's default-deny behaviour in headless (-p) mode, which is a default and
+   *   not a guarantee. Anything that must never run belongs in
+   *   getDisallowedToolsForClaude() instead, which becomes --disallowedTools.
    */
   getAllowedToolsForClaude() {
     const workingDir = process.env.GITHUB_WORKSPACE || process.cwd();
 
     const allowedTools = [
       // File operations — restricted to the target repository workspace.
-      // These native tools are path-scoped to ${workingDir}, so the agent can
-      // read/search/edit repo files but nothing outside the workspace.
-      "LS",
-      `Read(/${workingDir}/**)`,
-      `Edit(/${workingDir}/**)`,
-      `MultiEdit(/${workingDir}/**)`,
-      `Write(/${workingDir}/**)`,
-      `Glob(/${workingDir}/**)`,
-      `Grep(/${workingDir}/**)`
+      // Every file tool carries the same path scope, including LS: an unscoped
+      // LS would let the agent enumerate directories outside the workspace
+      // (e.g. the runner temp dir holding the generated MCP credential config),
+      // which is the reconnaissance step for reading it.
+      `LS(${workingDir}/**)`,
+      `Read(${workingDir}/**)`,
+      `Edit(${workingDir}/**)`,
+      `MultiEdit(${workingDir}/**)`,
+      `Write(${workingDir}/**)`,
+      `Glob(${workingDir}/**)`,
+      `Grep(${workingDir}/**)`
 
       // NOTE: Broad shell file/enumeration commands (Bash(cat:*), Bash(find:*),
       // Bash(grep:*), Bash(xargs:*), etc.) are intentionally NOT granted.
@@ -144,7 +149,8 @@ class MCPConfigManager {
       // patterns would allow reading arbitrary files outside the workspace
       // (e.g. the generated MCP credential config in the runner temp dir) and
       // chaining commands. The path-scoped native tools above cover legitimate
-      // repository investigation without that exposure.
+      // repository investigation without that exposure. Bash is additionally
+      // denied outright via getDisallowedToolsForClaude().
     ];
 
     // Add AWS MCP tools if credentials are available
@@ -163,6 +169,25 @@ class MCPConfigManager {
     }
 
     return allowedTools.join(',');
+  }
+
+  /**
+   * Tools the agent must never be able to invoke, passed to claude-code-base-action
+   * as `disallowed_tools` (--disallowedTools), which takes precedence over the
+   * allow list.
+   *
+   * Bash cannot be path-scoped by argument, so any Bash grant is effectively
+   * "read and write anything the runner user can reach", including the generated
+   * MCP credential config and the checkout's git credentials. Leaving Bash out of
+   * the allow list is not sufficient on its own: that only relies on the CLI
+   * defaulting to deny for un-allowed tools in headless mode. Denying it
+   * explicitly makes the boundary independent of CLI defaults and versions.
+   *
+   * WebFetch/WebSearch are denied because they are a direct exfiltration channel
+   * for anything the agent has read, and the investigation needs neither.
+   */
+  getDisallowedToolsForClaude() {
+    return ['Bash', 'WebFetch', 'WebSearch'].join(',');
   }
 
   /**

@@ -13,6 +13,7 @@ jest.mock('@actions/core', () => ({
   warning: jest.fn(),
   setOutput: jest.fn(),
   setFailed: jest.fn(),
+  setSecret: jest.fn(),
 }));
 
 // Mock @actions/github with mutable context

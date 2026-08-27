@@ -9,6 +9,7 @@ jest.mock('fs', () => {
     existsSync: jest.fn(),
     mkdirSync: jest.fn(),
     writeFileSync: jest.fn(),
+    chmodSync: jest.fn(),
     promises: {
       access: jest.fn(),
       appendFile: jest.fn(),
@@ -24,12 +25,14 @@ const path = require('path');
 // Mock MCPConfigManager
 const mockBuildMCPConfig = jest.fn();
 const mockGetAllowedToolsForClaude = jest.fn();
+const mockGetDisallowedToolsForClaude = jest.fn();
 const mockHasAWSCredentials = jest.fn();
 
 jest.mock('../src/config/mcp-config.js', () => ({
   MCPConfigManager: jest.fn().mockImplementation(() => ({
     buildMCPConfig: mockBuildMCPConfig,
     getAllowedToolsForClaude: mockGetAllowedToolsForClaude,
+    getDisallowedToolsForClaude: mockGetDisallowedToolsForClaude,
     hasAWSCredentials: mockHasAWSCredentials,
   })),
 }));
@@ -54,6 +57,7 @@ describe('prepare-claude-config', () => {
       }
     });
     mockGetAllowedToolsForClaude.mockReturnValue('tool1,tool2,tool3');
+    mockGetDisallowedToolsForClaude.mockReturnValue('Bash,WebFetch,WebSearch');
     mockHasAWSCredentials.mockReturnValue(true);
   });
 

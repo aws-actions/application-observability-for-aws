@@ -289,7 +289,30 @@ describe('post-result', () => {
       expect(isBackgroundAgentPlaceholder(
         'Waiting on the background exploration agent to finish before responding with the final investigation result.'
       )).toBe(true);
-      expect(isBackgroundAgentPlaceholder('background exploration agent')).toBe(true);
+      expect(isBackgroundAgentPlaceholder(
+        '⚠️ Waiting for the background exploration agent.'
+      )).toBe(true);
+    });
+
+    it('does not suppress a result that merely mentions background agents', () => {
+      // The result is influenced by issue/comment text, so a loose match would let
+      // anyone kill an investigation by getting the phrase echoed back.
+      expect(isBackgroundAgentPlaceholder(
+        '## Root Cause\nThe worker is waiting on the background queue.\n\n## Fix\nRestart the agent.'
+      )).toBe(false);
+      expect(isBackgroundAgentPlaceholder(
+        'background exploration agent'
+      )).toBe(false);
+      expect(isBackgroundAgentPlaceholder(
+        '## Analysis\nThe action disables the built-in background exploration agent via an env var, ' +
+        'so the investigation stays synchronous. No further action needed.'
+      )).toBe(false);
+    });
+
+    it('does not treat a long result as a placeholder even if the phrase leads it', () => {
+      const long = 'Waiting on the background exploration agent was mentioned in the logs. ' +
+        'x'.repeat(500);
+      expect(isBackgroundAgentPlaceholder(long)).toBe(false);
     });
 
     it('does not flag a normal investigation result', () => {

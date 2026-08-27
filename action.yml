@@ -17,7 +17,7 @@ inputs:
     required: false
     default: "awsapm/"
   allowed_non_write_users:
-    description: "Comma-separated list of GitHub usernames allowed to use this action even without write access. Empty string (default) means only users with write/admin access can use it."
+    description: "Comma-separated list of GitHub usernames allowed to use this action even without write access. Empty string (default) means only users with write/admin access can use it. The single value '*' allows ANY user to trigger the action, which removes the trust boundary entirely - see docs/security.md before using it."
     required: false
     default: ""
   github_token:
@@ -61,6 +61,9 @@ outputs:
   allowed_tools:
     description: "Comma-separated list of allowed tools"
     value: ${{ steps.prepare-claude.outputs.allowed_tools }}
+  disallowed_tools:
+    description: "Comma-separated list of tools the agent must never invoke. Pass this to claude-code-base-action's disallowed_tools input; it takes precedence over allowed_tools and does not rely on the CLI's default-deny behaviour."
+    value: ${{ steps.prepare-claude.outputs.disallowed_tools }}
 
   # Common outputs
   awsapm_comment_id:

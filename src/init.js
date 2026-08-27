@@ -102,6 +102,11 @@ async function run() {
       throw new Error('GitHub token is required');
     }
 
+    // Register the token as a secret so Actions masks it in logs. It is exposed
+    // downstream as a step output (see below) because subsequent steps and the
+    // caller's workflow need it; masking keeps it out of run logs and debug output.
+    core.setSecret(githubToken);
+
     // Create Octokit instance
     const octokit = github.getOctokit(githubToken);
 
